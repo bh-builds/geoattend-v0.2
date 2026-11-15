@@ -10,6 +10,7 @@ const faceGuide = document.getElementById('faceGuide');
 
 let appConfig = null;
 let registeredUsers = [];
+let rawUsersCache = [];
 let currentCoords = null;
 let modelsReady = false;
 let cameraReady = false;
@@ -32,7 +33,7 @@ document.getElementById('btnClockIn').addEventListener('click', () => handleAtte
 document.getElementById('btnClockOut').addEventListener('click', () => handleAttendance('CLOCK OUT'));
 document.getElementById('btnRegister').addEventListener('click', handleRegister);
 
-// 3. Initialize after all deferred scripts (Leaflet + face-api.js) have finished loading
+// 3. Initialize Backend Config & AI Models after all deferred scripts load
 window.addEventListener('load', () => {
   loadBackendConfig();
   loadFaceModels();
@@ -69,8 +70,7 @@ async function loadBackendConfig() {
 
     initMap(appConfig);
 
-    // Store raw users first; build LabeledFaceDescriptors once faceapi models finish
-    window._rawUsers = initRes.users || [];
+    rawUsersCache = initRes.users || [];
     buildUserDescriptors();
 
     statusEl.innerText = 'Config loaded. Tap "Activate Camera & GPS" above.';
@@ -87,7 +87,7 @@ async function loadBackendConfig() {
 async function loadFaceModels() {
   try {
     if (typeof faceapi === 'undefined') {
-      throw new Error('face-api.js library failed to load from CDN');
+      throw new Error('face-api.js failed to load from CDN');
     }
 
     await Promise.all([
@@ -109,8 +109,8 @@ async function loadFaceModels() {
 }
 
 function buildUserDescriptors() {
-  if (!modelsReady || !window._rawUsers) return;
-  registeredUsers = window._rawUsers.map(u => ({
+  if (!modelsReady || !rawUsersCache.length) return;
+  registeredUsers = rawUsersCache.map(u => ({
     ...u,
     labeledDescriptor: new faceapi.LabeledFaceDescriptors(
       `${u.userId}|${u.name}`,
@@ -139,17 +139,41 @@ function initMap(cfg) {
   }).addTo(map);
 }
 
+// 4. Resilient Camera & GPS Activation
 async function activateSensors() {
   const btn = document.getElementById('btnStartSensors');
   btn.disabled = true;
   btn.innerText = 'Requesting Access...';
+  statusEl.innerText = 'Requesting camera & GPS permissions...';
 
+  if (!window.isSecureContext) {
+    statusEl.innerText = 'Error: Camera & GPS require an HTTPS connection.';
+    btn.disabled = false;
+    btn.innerText = 'Retry Camera & GPS';
+    return;
+  }
+
+  // Request Camera with automatic fallback for desktop/older webcams
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      audio: false
-    });
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Browser does not support the Camera API.');
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false
+      });
+    } catch (constraintErr) {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+      });
+    }
+
     video.srcObject = stream;
+    await video.play();
     cameraReady = true;
     camOverlay.classList.add('hidden');
     faceGuide.classList.remove('hidden');
@@ -157,7 +181,24 @@ async function activateSensors() {
   } catch (err) {
     btn.disabled = false;
     btn.innerText = 'Retry Camera & GPS';
-    statusEl.innerText = `Camera Error (${err.name}): ${err.message}`;
+
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      statusEl.innerText = 'Camera Permission Denied: Tap the lock/tune icon in your address bar -> Permissions -> Allow Camera, then reload.';
+    } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+      statusEl.innerText = 'Camera is busy in another tab or app. Close it and tap Retry.';
+    } else if (err.name === 'NotFoundError') {
+      statusEl.innerText = 'No camera hardware detected on this device.';
+    } else {
+      statusEl.innerText = `Camera Error (${err.name}): ${err.message}`;
+    }
+    return;
+  }
+
+  // Request Geolocation independently
+  if (!('geolocation' in navigator)) {
+    gpsBadge.querySelector('.pill-text').innerText = 'GPS: Unsupported';
+    gpsBadge.classList.add('warn');
+    statusEl.innerText = 'Camera active, but GPS is unsupported by this browser.';
     return;
   }
 
@@ -168,11 +209,11 @@ async function activateSensors() {
       updateActionButtons();
     },
     (err) => {
-      gpsBadge.querySelector('.pill-text').innerText = 'GPS: Denied';
+      gpsBadge.querySelector('.pill-text').innerText = 'GPS: Blocked';
       gpsBadge.classList.add('warn');
-      statusEl.innerText = `GPS Error (${err.code}): ${err.message}`;
+      statusEl.innerText = `GPS Error (${err.code}): ${err.message}. Enable Location permissions and retry.`;
     },
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
   );
 }
 
@@ -211,6 +252,7 @@ function updateActionButtons() {
   document.getElementById('btnRegister').disabled = !(modelsReady && cameraReady);
 }
 
+// 5. CORS-Safe POST Helper for Google Apps Script
 async function postToGAS(payload) {
   const res = await fetch(GAS_API_URL, {
     method: 'POST',
@@ -220,6 +262,7 @@ async function postToGAS(payload) {
   return res.json();
 }
 
+// 6. Register New Face Profile
 async function handleRegister() {
   const userId = document.getElementById('regId').value.trim();
   const name = document.getElementById('regName').value.trim();
@@ -267,6 +310,7 @@ async function handleRegister() {
   }
 }
 
+// 7. Verify Face & Record Attendance
 async function handleAttendance(type) {
   if (!currentCoords) return alert('Waiting for GPS signal...');
   if (registeredUsers.length === 0) return alert('No registered faces found. Switch to "Register Face" first.');
@@ -330,6 +374,7 @@ function setButtonsLocked(locked) {
   }
 }
 
+// 8. Haversine Formula (Distance in Meters)
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI / 180;

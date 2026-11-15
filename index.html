@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GeoAttend • HKN ke-62</title>
+  <!-- Google Font: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Leaflet Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- face-api.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <!-- App Assets -->
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+
+  <main class="app-shell">
+    <!-- Hero Banner -->
+    <header class="hero-header">
+      <div class="hero-badge">SMART ATTENDANCE</div>
+      <h1 id="eventTitle">Loading Event...</h1>
+      <p id="locationSubtitle">
+        <span class="dot-pulse"></span> Connecting to venue rules...
+      </p>
+    </header>
+
+    <!-- Telemetry Pills -->
+    <section class="telemetry-row">
+      <div id="aiBadge" class="pill pill-neutral">
+        <span class="pill-icon">🧠</span>
+        <span class="pill-text">AI: Loading...</span>
+      </div>
+      <div id="gpsBadge" class="pill pill-neutral">
+        <span class="pill-icon">📍</span>
+        <span class="pill-text">GPS: Waiting...</span>
+      </div>
+    </section>
+
+    <!-- Interactive Geofence Map Card -->
+    <div class="map-card">
+      <div id="map"></div>
+      <div id="radiusTag" class="map-tag">Geofence Radius: -- m</div>
+    </div>
+
+    <!-- Camera Viewport with Biometric Framing Guide -->
+    <section class="camera-card">
+      <video id="video" autoplay muted playsinline></video>
+
+      <!-- Biometric Oval Guide (visible when camera is active) -->
+      <div id="faceGuide" class="face-guide hidden">
+        <div class="oval-frame"></div>
+        <span class="guide-hint">Align your face inside the frame</span>
+      </div>
+
+      <!-- Activation Overlay -->
+      <div id="camOverlay" class="video-overlay">
+        <div class="cam-icon-ring">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
+        <h3>Camera & GPS Required</h3>
+        <p>Enable sensors to verify your face and location at the venue.</p>
+        <button id="btnStartSensors" class="btn btn-primary btn-glow">
+          Activate Camera & GPS
+        </button>
+      </div>
+    </section>
+
+    <!-- Live Status Toast Bar -->
+    <div id="status" class="status-bar" role="status">
+      Initializing system...
+    </div>
+
+    <!-- Mode Switcher Tabs -->
+    <div class="tab-bar">
+      <button type="button" class="tab-btn active" data-tab="panel-attendance">Check In / Out</button>
+      <button type="button" class="tab-btn" data-tab="panel-register">Register Face</button>
+    </div>
+
+    <!-- Panel 1: Attendance Actions -->
+    <section id="panel-attendance" class="tab-panel active">
+      <div class="action-grid">
+        <button id="btnClockIn" class="btn btn-emerald" disabled>
+          <span class="btn-title">Clock In</span>
+          <span class="btn-sub">Arrival / Datang</span>
+        </button>
+        <button id="btnClockOut" class="btn btn-rose" disabled>
+          <span class="btn-title">Clock Out</span>
+          <span class="btn-sub">Departure / Pulang</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Panel 2: Face Enrollment -->
+    <section id="panel-register" class="tab-panel">
+      <div class="form-stack">
+        <div class="input-group">
+          <label for="regId">NIP / Participant ID</label>
+          <input type="text" id="regId" placeholder="e.g. 198109042009121001" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="regName">Full Name</label>
+          <input type="text" id="regName" placeholder="Enter your full name" autocomplete="off">
+        </div>
+        <button id="btnRegister" class="btn btn-teal" disabled>
+          Capture & Save Face Profile
+        </button>
+      </div>
+    </section>
+
+    <footer class="app-footer">
+      <span id="versionInfo">GeoAttend • Kemenkes RI</span>
+    </footer>
+  </main>
+
+  <!-- Success / feedback modal -->
+  <div id="resultModal" class="result-modal" aria-hidden="true">
+    <div class="result-backdrop" data-close-modal></div>
+    <section class="result-dialog" role="dialog" aria-modal="true" aria-labelledby="resultTitle" aria-describedby="resultMessage">
+      <button type="button" class="result-close" id="resultClose" aria-label="Close">&times;</button>
+      <div class="result-icon" id="resultIcon" aria-hidden="true"><span>✓</span></div>
+      <div class="result-eyebrow" id="resultEyebrow">SUCCESS</div>
+      <h2 id="resultTitle">Completed successfully</h2>
+      <p id="resultMessage">Your request has been saved.</p>
+      <div class="result-meta" id="resultMeta"></div>
+      <button type="button" class="result-button" id="resultOk">Continue</button>
+    </section>
+  </div>
+</body>
+</html>

@@ -64,11 +64,14 @@
   </div>
 
   <!-- Step 2: Target iframe (src injected after permissions are granted) -->
-  <iframe
-    id="appFrame"
-    allow="camera https://script.google.com https://*.googleusercontent.com; geolocation https://script.google.com https://*.googleusercontent.com"
-    allowfullscreen>
-  </iframe>
+<!-- Correct iframe tag for GitHub Pages -->
+<iframe
+  id="appFrame"
+  src="https://script.google.com/macros/s/AKfycbz1l_aMFoI6UyxQDz6i1mP2PuFLLXXbGOdgEoRGGhBOpCU3JcaiNm4oJkTvj9T6M2pjJg/exec"
+  allow="camera *; microphone *; geolocation *"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+  allowfullscreen>
+</iframe>
 
   <script>
     const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz1l_aMFoI6UyxQDz6i1mP2PuFLLXXbGOdgEoRGGhBOpCU3JcaiNm4oJkTvj9T6M2pjJg/exec";

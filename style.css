@@ -415,3 +415,25 @@ video {
   background: linear-gradient(135deg, #b91c1c, #e11d48);
   box-shadow: 0 7px 16px rgba(220, 38, 38, .18);
 }
+
+/* OpenStreetMap tile-load notice */
+.map-load-message {
+  position: absolute;
+  z-index: 600;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  padding: 8px 10px;
+  border: 1px solid #fcd34d;
+  border-radius: 9px;
+  background: rgba(255, 251, 235, 0.96);
+  color: #92400e;
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+.map-load-message[hidden] {
+  display: none;
+}
+

@@ -148,11 +148,30 @@ function buildUserDescriptors() {
 }
 
 function initMap(cfg) {
-  if (typeof L === 'undefined') return;
+  const mapElement = document.getElementById('map');
+  if (typeof L === 'undefined') {
+    mapElement.innerHTML = '<div class="map-load-message" role="status">Map library could not be loaded. Check your internet connection and refresh.</div>';
+    return;
+  }
+
   map = L.map('map', { zoomControl: false }).setView([cfg.latitude, cfg.longitude], 16);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '© OpenStreetMap'
+
+  // Use OpenStreetMap's public raster tile service directly; no API key required.
+  const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
+    maxZoom: 19
   }).addTo(map);
+
+  // Show a helpful in-map notice if tiles cannot be reached, without blocking attendance.
+  const tileNotice = document.createElement('div');
+  tileNotice.className = 'map-load-message';
+  tileNotice.setAttribute('role', 'status');
+  tileNotice.textContent = 'Map tiles could not be loaded. Check your internet connection; GPS attendance can still work.';
+  tileNotice.hidden = true;
+  mapElement.appendChild(tileNotice);
+
+  tileLayer.on('tileerror', () => { tileNotice.hidden = false; });
+  tileLayer.on('tileload', () => { tileNotice.hidden = true; });
 
   L.marker([cfg.latitude, cfg.longitude])
     .addTo(map)

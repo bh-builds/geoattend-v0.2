@@ -227,9 +227,6 @@ function applyLanguage() {
   }
 
   if (appConfig) {
-    document.getElementById('eventTitle').textContent = appConfig.eventName;
-    document.getElementById('locationSubtitle').textContent =
-      `${appConfig.locationName} • ${appConfig.restrict ? t('strictGeofence') : t('openLocation')}`;
     document.getElementById('radiusTag').textContent = t('radiusTag', appConfig.allowedRadius);
   }
 
@@ -329,7 +326,7 @@ async function loadBackendConfig() {
     appConfig = initRes.config;
     document.getElementById('eventTitle').innerText = appConfig.eventName;
     document.getElementById('locationSubtitle').innerText =
-      `${appConfig.locationName} • ${appConfig.restrict ? t('strictGeofence') : t('openLocation')}`;
+      `${appConfig.locationName} • ${appConfig.restrict ? 'Strict Geofence' : 'Open Location'}`;
     document.getElementById('radiusTag').innerText = t('radiusTag', appConfig.allowedRadius);
     document.getElementById('versionInfo').innerText = `GeoAttend • API ${initRes.version || 'v2'}`;
 
@@ -341,8 +338,8 @@ async function loadBackendConfig() {
     statusEl.innerText = t('statusConfigLoaded');
   } catch (err) {
     clearTimeout(timeoutId);
-    document.getElementById('eventTitle').innerText = t('statusConnFailed');
-    document.getElementById('locationSubtitle').innerText = t('statusConnFailedSub');
+    document.getElementById('eventTitle').innerText = 'Connection Failed';
+    document.getElementById('locationSubtitle').innerText = 'Could not reach Google Apps Script';
     statusEl.innerText = err.name === 'AbortError'
       ? t('statusTimeout')
       : `API Error: ${err.message}`;

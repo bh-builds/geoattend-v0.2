@@ -8,28 +8,264 @@ const gpsBadge = document.getElementById('gpsBadge');
 const camOverlay = document.getElementById('camOverlay');
 const faceGuide = document.getElementById('faceGuide');
 
+let currentLang = localStorage.getItem('geoattend_lang') || 'en';
 let appConfig = null;
 let registeredUsers = [];
 let rawUsersCache = [];
 let currentCoords = null;
 let modelsReady = false;
+let modelsFailed = false;
 let cameraReady = false;
+let gpsState = 'waiting'; // waiting | ready | blocked | unsupported
+let lastDistance = null;
+let lastInside = true;
 let map = null;
 let userMarker = null;
 
-// Accessible, branded HTML result popup (replaces browser alert dialogs).
+const I18N = {
+  en: {
+    heroBadge: 'SMART ATTENDANCE',
+    loadingEvent: 'Loading Event...',
+    connectingVenue: 'Connecting to venue rules...',
+    strictGeofence: 'Strict Geofence',
+    openLocation: 'Open Location',
+    radiusTag: (r) => `Radius: ${r}m`,
+    aiLoading: 'AI: Loading...',
+    aiReady: 'AI: Ready',
+    aiFailed: 'AI: Failed',
+    gpsWaiting: 'GPS: Waiting...',
+    gpsBlocked: 'GPS: Blocked',
+    gpsUnsupported: 'GPS: N/A',
+    gpsDist: (d, inside) => `${d}m (${inside ? 'In' : 'Out'})`,
+    guideHint: 'Align your face inside the frame',
+    overlayTitle: 'Camera & GPS Required',
+    overlayDesc: 'Enable sensors to verify your face and location at the venue.',
+    btnActivate: 'Activate Camera & GPS',
+    btnRequesting: 'Requesting Access...',
+    btnRetry: 'Retry Camera & GPS',
+    tabAttendance: 'Check In / Out',
+    tabRegister: 'Register Face',
+    btnClockInTitle: 'Clock In',
+    btnClockInSub: 'Arrival',
+    btnClockOutTitle: 'Clock Out',
+    btnClockOutSub: 'Departure',
+    labelId: 'NIP / Participant ID',
+    placeholderId: 'e.g. 198109042009121001',
+    labelName: 'Full Name',
+    placeholderName: 'Enter your full name',
+    btnSaveProfile: 'Capture & Save Face Profile',
+    btnContinue: 'Continue',
+    statusInit: 'Initializing system...',
+    statusFetching: 'Fetching event configuration from Google Sheets...',
+    statusConfigLoaded: 'Config loaded. Tap "Activate Camera & GPS" above.',
+    statusReqSensors: 'Requesting camera & GPS permissions...',
+    statusReady: 'Ready! Align your face inside the oval frame.',
+    statusConnFailed: 'Connection Failed',
+    statusConnFailedSub: 'Could not reach Google Apps Script',
+    statusTimeout: 'Timeout: Google Apps Script took too long to respond.',
+    statusHttps: 'Error: Camera & GPS require an HTTPS connection.',
+    statusCamDenied: 'Camera Permission Denied: Tap the lock/tune icon in your address bar -> Permissions -> Allow Camera, then reload.',
+    statusCamBusy: 'Camera is busy in another tab or app. Close it and tap Retry.',
+    statusCamNotFound: 'No camera hardware detected on this device.',
+    statusGpsUnsupported: 'Camera active, but GPS is unsupported by this browser.',
+    statusScanningReg: 'Scanning face for registration... Hold still.',
+    statusVerifying: 'Verifying facial identity...',
+    missingInfoTitle: 'Complete your details',
+    missingInfoMsg: 'Please enter both your participant ID and full name.',
+    missingInfoEyebrow: 'MISSING INFORMATION',
+    noFaceTitle: 'Face not detected',
+    noFaceRegMsg: 'No face was detected. Move into the camera frame, face the camera, and make sure the lighting is bright and even.',
+    noFaceRegEyebrow: 'REGISTRATION NOT COMPLETED',
+    regUpdatedTitle: 'Face profile updated!',
+    regCreatedTitle: 'Face registered!',
+    regUpdatedMsg: (name) => `${name}'s facial profile has been updated successfully.`,
+    regCreatedMsg: (name) => `${name} is now registered and can use facial recognition for attendance.`,
+    regUpdatedEyebrow: 'PROFILE UPDATED',
+    regCreatedEyebrow: 'REGISTRATION COMPLETE',
+    regMeta: (id) => `Participant ID: ${id}`,
+    regFailedTitle: 'Registration not completed',
+    regSaveFailedTitle: 'Face registration failed',
+    gpsNotReadyTitle: 'GPS is not ready',
+    gpsNotReadyMsg: 'Wait until your location is detected, then try again.',
+    gpsNotReadyEyebrow: 'LOCATION REQUIRED',
+    noUsersTitle: 'No face profile found',
+    noUsersMsg: 'Please register your face before checking in or out.',
+    noUsersEyebrow: 'REGISTRATION REQUIRED',
+    noFaceAttMsg: (type) => `We could not detect your face, so your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} was not recorded. Center your face inside the oval and try again.`,
+    attNotRecordedEyebrow: (type) => `${type} NOT RECORDED`,
+    unrecognizedTitle: 'Face not recognized',
+    unrecognizedMsg: (type) => `Your face does not match a registered profile. Your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} was not recorded. Please register or update your face profile, then try again.`,
+    attSuccessTitle: (isIn) => isIn ? 'Check-in successful!' : 'Check-out successful!',
+    attSuccessDefault: (isIn) => isIn ? 'Your arrival has been recorded successfully.' : 'Your departure has been recorded successfully.',
+    attSuccessEyebrow: (isIn) => isIn ? 'ATTENDANCE RECORDED' : 'DEPARTURE RECORDED',
+    attFailTitle: (isIn) => isIn ? 'Check-in unsuccessful' : 'Check-out unsuccessful',
+    attFailEyebrow: 'ATTENDANCE NOT RECORDED',
+    subFailEyebrow: 'SUBMISSION FAILED'
+  },
+  id: {
+    heroBadge: 'ABSENSI PINTAR',
+    loadingEvent: 'Memuat Acara...',
+    connectingVenue: 'Menghubungkan aturan lokasi...',
+    strictGeofence: 'Geofence Ketat',
+    openLocation: 'Lokasi Bebas',
+    radiusTag: (r) => `Radius: ${r}m`,
+    aiLoading: 'AI: Memuat...',
+    aiReady: 'AI: Siap',
+    aiFailed: 'AI: Gagal',
+    gpsWaiting: 'GPS: Menunggu...',
+    gpsBlocked: 'GPS: Diblokir',
+    gpsUnsupported: 'GPS: N/A',
+    gpsDist: (d, inside) => `${d}m (${inside ? 'Dalam' : 'Luar'})`,
+    guideHint: 'Posisikan wajah di dalam bingkai oval',
+    overlayTitle: 'Kamera & GPS Diperlukan',
+    overlayDesc: 'Aktifkan sensor untuk memverifikasi wajah dan lokasi Anda di tempat acara.',
+    btnActivate: 'Aktifkan Kamera & GPS',
+    btnRequesting: 'Meminta Akses...',
+    btnRetry: 'Coba Lagi Kamera & GPS',
+    tabAttendance: 'Absen Masuk / Pulang',
+    tabRegister: 'Daftar Wajah',
+    btnClockInTitle: 'Absen Masuk',
+    btnClockInSub: 'Datang',
+    btnClockOutTitle: 'Absen Pulang',
+    btnClockOutSub: 'Pulang',
+    labelId: 'NIP / ID Peserta',
+    placeholderId: 'contoh: 198109042009121001',
+    labelName: 'Nama Lengkap',
+    placeholderName: 'Masukkan nama lengkap Anda',
+    btnSaveProfile: 'Ambil & Simpan Profil Wajah',
+    btnContinue: 'Lanjutkan',
+    statusInit: 'Menginisialisasi sistem...',
+    statusFetching: 'Mengambil konfigurasi acara dari Google Sheets...',
+    statusConfigLoaded: 'Konfigurasi dimuat. Ketuk "Aktifkan Kamera & GPS" di atas.',
+    statusReqSensors: 'Meminta izin kamera & GPS...',
+    statusReady: 'Siap! Posisikan wajah Anda di dalam bingkai oval.',
+    statusConnFailed: 'Koneksi Gagal',
+    statusConnFailedSub: 'Tidak dapat terhubung ke Google Apps Script',
+    statusTimeout: 'Waktu habis: Google Apps Script terlalu lama merespons.',
+    statusHttps: 'Kesalahan: Kamera & GPS memerlukan koneksi HTTPS.',
+    statusCamDenied: 'Izin Kamera Ditolak: Ketuk ikon gembok/pengaturan di bilah alamat browser -> Izin -> Izinkan Kamera, lalu muat ulang.',
+    statusCamBusy: 'Kamera sedang digunakan aplikasi atau tab lain. Tutup lalu coba lagi.',
+    statusCamNotFound: 'Perangkat kamera tidak ditemukan.',
+    statusGpsUnsupported: 'Kamera aktif, tetapi GPS tidak didukung oleh browser ini.',
+    statusScanningReg: 'Memindai wajah untuk pendaftaran... Harap diam sejenak.',
+    statusVerifying: 'Memverifikasi identitas wajah...',
+    missingInfoTitle: 'Lengkapi data Anda',
+    missingInfoMsg: 'Harap masukkan ID peserta dan nama lengkap Anda.',
+    missingInfoEyebrow: 'DATA BELUM LENGKAP',
+    noFaceTitle: 'Wajah tidak terdeteksi',
+    noFaceRegMsg: 'Wajah tidak terdeteksi. Posisikan wajah menghadap kamera dengan pencahayaan yang terang dan merata.',
+    noFaceRegEyebrow: 'PENDAFTARAN GAGAL',
+    regUpdatedTitle: 'Profil wajah diperbarui!',
+    regCreatedTitle: 'Wajah berhasil didaftarkan!',
+    regUpdatedMsg: (name) => `Profil wajah ${name} berhasil diperbarui.`,
+    regCreatedMsg: (name) => `${name} telah terdaftar dan dapat menggunakan pengenalan wajah untuk absensi.`,
+    regUpdatedEyebrow: 'PROFIL DIPERBARUI',
+    regCreatedEyebrow: 'PENDAFTARAN BERHASIL',
+    regMeta: (id) => `ID Peserta: ${id}`,
+    regFailedTitle: 'Pendaftaran belum berhasil',
+    regSaveFailedTitle: 'Gagal menyimpan profil wajah',
+    gpsNotReadyTitle: 'GPS belum siap',
+    gpsNotReadyMsg: 'Tunggu hingga lokasi Anda terdeteksi, lalu coba lagi.',
+    gpsNotReadyEyebrow: 'LOKASI DIPERLUKAN',
+    noUsersTitle: 'Profil wajah belum ada',
+    noUsersMsg: 'Silakan daftarkan wajah Anda terlebih dahulu sebelum melakukan absensi.',
+    noUsersEyebrow: 'PENDAFTARAN DIPERLUKAN',
+    noFaceAttMsg: (type) => `Wajah tidak terdeteksi sehingga ${type === 'CLOCK IN' ? 'absen masuk' : 'absen pulang'} tidak tercatat. Posisikan wajah di tengah bingkai oval dan coba lagi.`,
+    attNotRecordedEyebrow: (type) => `${type === 'CLOCK IN' ? 'ABSEN MASUK' : 'ABSEN PULANG'} TIDAK TERCATAT`,
+    unrecognizedTitle: 'Wajah tidak dikenali',
+    unrecognizedMsg: (type) => `Wajah Anda tidak cocok dengan profil terdaftar sehingga ${type === 'CLOCK IN' ? 'absen masuk' : 'absen pulang'} tidak tercatat. Silakan daftar wajah terlebih dahulu.`,
+    attSuccessTitle: (isIn) => isIn ? 'Absen masuk berhasil!' : 'Absen pulang berhasil!',
+    attSuccessDefault: (isIn) => isIn ? 'Kehadiran Anda telah berhasil dicatat.' : 'Kepulangan Anda telah berhasil dicatat.',
+    attSuccessEyebrow: (isIn) => isIn ? 'KEHADIRAN TERCATAT' : 'KEPULANGAN TERCATAT',
+    attFailTitle: (isIn) => isIn ? 'Absen masuk gagal' : 'Absen pulang gagal',
+    attFailEyebrow: 'ABSENSI TIDAK TERCATAT',
+    subFailEyebrow: 'PENGIRIMAN GAGAL'
+  }
+};
+
+function t(key, ...args) {
+  const dict = I18N[currentLang] || I18N.en;
+  const val = dict[key];
+  return typeof val === 'function' ? val(...args) : val;
+}
+
+function applyLanguage() {
+  document.documentElement.lang = currentLang;
+  document.getElementById('langLabel').textContent = currentLang === 'en' ? 'EN' : 'ID';
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (I18N[currentLang][key]) {
+      el.textContent = t(key);
+    }
+  });
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (I18N[currentLang][key]) {
+      el.setAttribute('placeholder', t(key));
+    }
+  });
+
+  // Update dynamic badges & headers
+  if (modelsReady) {
+    aiBadge.querySelector('.pill-text').textContent = t('aiReady');
+  } else if (modelsFailed) {
+    aiBadge.querySelector('.pill-text').textContent = t('aiFailed');
+  } else {
+    aiBadge.querySelector('.pill-text').textContent = t('aiLoading');
+  }
+
+  if (gpsState === 'ready' && lastDistance !== null) {
+    gpsBadge.querySelector('.pill-text').textContent = t('gpsDist', lastDistance, lastInside);
+  } else if (gpsState === 'blocked') {
+    gpsBadge.querySelector('.pill-text').textContent = t('gpsBlocked');
+  } else if (gpsState === 'unsupported') {
+    gpsBadge.querySelector('.pill-text').textContent = t('gpsUnsupported');
+  } else {
+    gpsBadge.querySelector('.pill-text').textContent = t('gpsWaiting');
+  }
+
+  if (appConfig) {
+    document.getElementById('eventTitle').textContent = appConfig.eventName;
+    document.getElementById('locationSubtitle').textContent =
+      `${appConfig.locationName} • ${appConfig.restrict ? t('strictGeofence') : t('openLocation')}`;
+    document.getElementById('radiusTag').textContent = t('radiusTag', appConfig.allowedRadius);
+  }
+
+  if (cameraReady && currentCoords) {
+    statusEl.textContent = t('statusReady');
+  } else if (appConfig && !cameraReady) {
+    statusEl.textContent = t('statusConfigLoaded');
+  }
+}
+
+document.getElementById('btnLangToggle').addEventListener('click', () => {
+  currentLang = currentLang === 'en' ? 'id' : 'en';
+  localStorage.setItem('geoattend_lang', currentLang);
+  applyLanguage();
+});
+
+// Accessible, branded HTML result popup
 function showResultPopup({ title, message, eyebrow = 'SUCCESS', meta = '', kind = 'success' }) {
   const modal = document.getElementById('resultModal');
   const icon = document.getElementById('resultIcon');
+  const eyebrowEl = document.getElementById('resultEyebrow');
+  const okBtn = document.getElementById('resultOk');
+
   document.getElementById('resultTitle').textContent = title;
   document.getElementById('resultMessage').textContent = message || '';
-  document.getElementById('resultEyebrow').textContent = eyebrow;
+  eyebrowEl.textContent = eyebrow;
   document.getElementById('resultMeta').textContent = meta;
+
   icon.className = `result-icon ${kind}`;
+  eyebrowEl.className = `result-eyebrow ${kind}`;
+  okBtn.className = `result-button ${kind}`;
   icon.innerHTML = kind === 'success' ? '<span>✓</span>' : '<span>!</span>';
+
   modal.classList.add('show');
   modal.setAttribute('aria-hidden', 'false');
-  document.getElementById('resultOk').focus();
+  okBtn.focus();
 }
 
 function closeResultPopup() {
@@ -63,12 +299,13 @@ document.getElementById('btnRegister').addEventListener('click', handleRegister)
 
 // 3. Initialize Backend Config & AI Models after all deferred scripts load
 window.addEventListener('load', () => {
+  applyLanguage();
   loadBackendConfig();
   loadFaceModels();
 });
 
 async function loadBackendConfig() {
-  statusEl.innerText = 'Fetching event configuration from Google Sheets...';
+  statusEl.innerText = t('statusFetching');
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 12000);
 
@@ -92,8 +329,8 @@ async function loadBackendConfig() {
     appConfig = initRes.config;
     document.getElementById('eventTitle').innerText = appConfig.eventName;
     document.getElementById('locationSubtitle').innerText =
-      `${appConfig.locationName} • ${appConfig.restrict ? 'Strict Geofence' : 'Open Location'}`;
-    document.getElementById('radiusTag').innerText = `Geofence Radius: ${appConfig.allowedRadius}m`;
+      `${appConfig.locationName} • ${appConfig.restrict ? t('strictGeofence') : t('openLocation')}`;
+    document.getElementById('radiusTag').innerText = t('radiusTag', appConfig.allowedRadius);
     document.getElementById('versionInfo').innerText = `GeoAttend • API ${initRes.version || 'v2'}`;
 
     initMap(appConfig);
@@ -101,14 +338,14 @@ async function loadBackendConfig() {
     rawUsersCache = initRes.users || [];
     buildUserDescriptors();
 
-    statusEl.innerText = 'Config loaded. Tap "Activate Camera & GPS" above.';
+    statusEl.innerText = t('statusConfigLoaded');
   } catch (err) {
     clearTimeout(timeoutId);
-    document.getElementById('eventTitle').innerText = 'Connection Failed';
-    document.getElementById('locationSubtitle').innerText = 'Could not reach Google Apps Script';
+    document.getElementById('eventTitle').innerText = t('statusConnFailed');
+    document.getElementById('locationSubtitle').innerText = t('statusConnFailedSub');
     statusEl.innerText = err.name === 'AbortError'
-      ? 'Timeout: Google Apps Script took too long to respond.'
-      : `API Error: ${err.message}. Verify Web App is deployed as "Anyone" (New Version).`;
+      ? t('statusTimeout')
+      : `API Error: ${err.message}`;
   }
 }
 
@@ -125,12 +362,13 @@ async function loadFaceModels() {
     ]);
 
     modelsReady = true;
-    aiBadge.querySelector('.pill-text').innerText = 'AI: Ready';
+    aiBadge.querySelector('.pill-text').innerText = t('aiReady');
     aiBadge.classList.add('ok');
     buildUserDescriptors();
     updateActionButtons();
   } catch (err) {
-    aiBadge.querySelector('.pill-text').innerText = 'AI: Failed';
+    modelsFailed = true;
+    aiBadge.querySelector('.pill-text').innerText = t('aiFailed');
     aiBadge.classList.add('warn');
     statusEl.innerText = `AI Model Error: ${err.message}`;
   }
@@ -150,23 +388,20 @@ function buildUserDescriptors() {
 function initMap(cfg) {
   const mapElement = document.getElementById('map');
   if (typeof L === 'undefined') {
-    mapElement.innerHTML = '<div class="map-load-message" role="status">Map library could not be loaded. Check your internet connection and refresh.</div>';
+    mapElement.innerHTML = '<div class="map-load-message" role="status">Map library could not be loaded.</div>';
     return;
   }
 
-  map = L.map('map', { zoomControl: false }).setView([cfg.latitude, cfg.longitude], 16);
+  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([cfg.latitude, cfg.longitude], 16);
 
-  // Use OpenStreetMap's public raster tile service directly; no API key required.
   const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
     maxZoom: 19
   }).addTo(map);
 
-  // Show a helpful in-map notice if tiles cannot be reached, without blocking attendance.
   const tileNotice = document.createElement('div');
   tileNotice.className = 'map-load-message';
   tileNotice.setAttribute('role', 'status');
-  tileNotice.textContent = 'Map tiles could not be loaded. Check your internet connection; GPS attendance can still work.';
+  tileNotice.textContent = 'Map tiles unavailable.';
   tileNotice.hidden = true;
   mapElement.appendChild(tileNotice);
 
@@ -190,17 +425,16 @@ function initMap(cfg) {
 async function activateSensors() {
   const btn = document.getElementById('btnStartSensors');
   btn.disabled = true;
-  btn.innerText = 'Requesting Access...';
-  statusEl.innerText = 'Requesting camera & GPS permissions...';
+  btn.innerText = t('btnRequesting');
+  statusEl.innerText = t('statusReqSensors');
 
   if (!window.isSecureContext) {
-    statusEl.innerText = 'Error: Camera & GPS require an HTTPS connection.';
+    statusEl.innerText = t('statusHttps');
     btn.disabled = false;
-    btn.innerText = 'Retry Camera & GPS';
+    btn.innerText = t('btnRetry');
     return;
   }
 
-  // Request Camera with automatic fallback for desktop/older webcams
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error('Browser does not support the Camera API.');
@@ -227,25 +461,25 @@ async function activateSensors() {
     updateActionButtons();
   } catch (err) {
     btn.disabled = false;
-    btn.innerText = 'Retry Camera & GPS';
+    btn.innerText = t('btnRetry');
 
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      statusEl.innerText = 'Camera Permission Denied: Tap the lock/tune icon in your address bar -> Permissions -> Allow Camera, then reload.';
+      statusEl.innerText = t('statusCamDenied');
     } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-      statusEl.innerText = 'Camera is busy in another tab or app. Close it and tap Retry.';
+      statusEl.innerText = t('statusCamBusy');
     } else if (err.name === 'NotFoundError') {
-      statusEl.innerText = 'No camera hardware detected on this device.';
+      statusEl.innerText = t('statusCamNotFound');
     } else {
       statusEl.innerText = `Camera Error (${err.name}): ${err.message}`;
     }
     return;
   }
 
-  // Request Geolocation independently
   if (!('geolocation' in navigator)) {
-    gpsBadge.querySelector('.pill-text').innerText = 'GPS: Unsupported';
+    gpsState = 'unsupported';
+    gpsBadge.querySelector('.pill-text').innerText = t('gpsUnsupported');
     gpsBadge.classList.add('warn');
-    statusEl.innerText = 'Camera active, but GPS is unsupported by this browser.';
+    statusEl.innerText = t('statusGpsUnsupported');
     return;
   }
 
@@ -256,9 +490,10 @@ async function activateSensors() {
       updateActionButtons();
     },
     (err) => {
-      gpsBadge.querySelector('.pill-text').innerText = 'GPS: Blocked';
+      gpsState = 'blocked';
+      gpsBadge.querySelector('.pill-text').innerText = t('gpsBlocked');
       gpsBadge.classList.add('warn');
-      statusEl.innerText = `GPS Error (${err.code}): ${err.message}. Enable Location permissions and retry.`;
+      statusEl.innerText = `GPS Error (${err.code}): ${err.message}`;
     },
     { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
   );
@@ -273,14 +508,18 @@ function updateGpsStatus() {
   );
   const inside = dist <= appConfig.allowedRadius;
 
-  gpsBadge.querySelector('.pill-text').innerText = `${dist}m (${inside ? 'In Zone' : 'Outside'})`;
+  gpsState = 'ready';
+  lastDistance = dist;
+  lastInside = inside;
+
+  gpsBadge.querySelector('.pill-text').innerText = t('gpsDist', dist, inside);
   gpsBadge.className = 'pill ' + (inside || !appConfig.restrict ? 'ok' : 'warn');
-  statusEl.innerText = 'Ready! Align your face inside the oval frame.';
+  statusEl.innerText = t('statusReady');
 
   if (map) {
     if (!userMarker) {
       userMarker = L.circleMarker([latitude, longitude], {
-        radius: 7,
+        radius: 6,
         color: '#ffffff',
         weight: 2,
         fillColor: '#e11d48',
@@ -313,11 +552,18 @@ async function postToGAS(payload) {
 async function handleRegister() {
   const userId = document.getElementById('regId').value.trim();
   const name = document.getElementById('regName').value.trim();
-  if (!userId || !name) return showResultPopup({ title: 'Complete your details', message: 'Please enter both your participant ID and full name.', eyebrow: 'MISSING INFORMATION', kind: 'error' });
+  if (!userId || !name) {
+    return showResultPopup({
+      title: t('missingInfoTitle'),
+      message: t('missingInfoMsg'),
+      eyebrow: t('missingInfoEyebrow'),
+      kind: 'error'
+    });
+  }
 
   const wasRegistered = rawUsersCache.some(u => String(u.userId) === userId);
   setButtonsLocked(true);
-  statusEl.innerText = 'Scanning face for registration... Hold still.';
+  statusEl.innerText = t('statusScanningReg');
 
   try {
     const detection = await faceapi
@@ -326,9 +572,14 @@ async function handleRegister() {
       .withFaceDescriptor();
 
     if (!detection) {
-      const message = 'No face was detected. Move into the camera frame, face the camera, and make sure the lighting is bright and even.';
+      const message = t('noFaceRegMsg');
       statusEl.innerText = message;
-      showResultPopup({ title: 'Face not detected', message, eyebrow: 'REGISTRATION NOT COMPLETED', kind: 'error' });
+      showResultPopup({
+        title: t('noFaceTitle'),
+        message,
+        eyebrow: t('noFaceRegEyebrow'),
+        kind: 'error'
+      });
       return setButtonsLocked(false);
     }
 
@@ -351,22 +602,32 @@ async function handleRegister() {
       document.getElementById('regId').value = '';
       document.getElementById('regName').value = '';
       document.querySelector('[data-tab="panel-attendance"]').click();
-      const actionWord = wasRegistered ? 'updated' : 'registered';
-      statusEl.innerText = `Face profile ${actionWord} successfully for ${name}.`;
+
+      const msg = wasRegistered ? t('regUpdatedMsg', name) : t('regCreatedMsg', name);
+      statusEl.innerText = msg;
       showResultPopup({
-        title: wasRegistered ? 'Face profile updated!' : 'Face registered!',
-        message: wasRegistered ? `${name}'s facial profile has been updated successfully.` : `${name} is now registered and can use facial recognition for attendance.`,
-        eyebrow: wasRegistered ? 'PROFILE UPDATED' : 'REGISTRATION COMPLETE',
-        meta: `Participant ID: ${userId}`
+        title: wasRegistered ? t('regUpdatedTitle') : t('regCreatedTitle'),
+        message: msg,
+        eyebrow: wasRegistered ? t('regUpdatedEyebrow') : t('regCreatedEyebrow'),
+        meta: t('regMeta', userId)
       });
     } else {
-      statusEl.innerText = result.message || 'Face registration could not be completed.';
-      showResultPopup({ title: 'Registration not completed', message: result.message || 'The server did not confirm the registration.', eyebrow: 'PLEASE TRY AGAIN', kind: 'error' });
+      statusEl.innerText = result.message || t('regFailedTitle');
+      showResultPopup({
+        title: t('regFailedTitle'),
+        message: result.message || t('regFailedTitle'),
+        eyebrow: t('noFaceRegEyebrow'),
+        kind: 'error'
+      });
     }
   } catch (err) {
-    const message = `We could not save the face profile. ${err.message || 'Please check your connection and try again.'}`;
     statusEl.innerText = 'Registration Error: ' + err.message;
-    showResultPopup({ title: 'Face registration failed', message, eyebrow: 'SAVE FAILED', kind: 'error' });
+    showResultPopup({
+      title: t('regSaveFailedTitle'),
+      message: err.message,
+      eyebrow: t('subFailEyebrow'),
+      kind: 'error'
+    });
   } finally {
     setButtonsLocked(false);
   }
@@ -374,11 +635,25 @@ async function handleRegister() {
 
 // 7. Verify Face & Record Attendance
 async function handleAttendance(type) {
-  if (!currentCoords) return showResultPopup({ title: 'GPS is not ready', message: 'Wait until your location is detected, then try again.', eyebrow: 'LOCATION REQUIRED', kind: 'error' });
-  if (registeredUsers.length === 0) return showResultPopup({ title: 'No face profile found', message: 'Please register your face before checking in or out.', eyebrow: 'REGISTRATION REQUIRED', kind: 'error' });
+  if (!currentCoords) {
+    return showResultPopup({
+      title: t('gpsNotReadyTitle'),
+      message: t('gpsNotReadyMsg'),
+      eyebrow: t('gpsNotReadyEyebrow'),
+      kind: 'error'
+    });
+  }
+  if (registeredUsers.length === 0) {
+    return showResultPopup({
+      title: t('noUsersTitle'),
+      message: t('noUsersMsg'),
+      eyebrow: t('noUsersEyebrow'),
+      kind: 'error'
+    });
+  }
 
   setButtonsLocked(true);
-  statusEl.innerText = 'Verifying facial identity...';
+  statusEl.innerText = t('statusVerifying');
 
   try {
     const detection = await faceapi
@@ -387,10 +662,14 @@ async function handleAttendance(type) {
       .withFaceDescriptor();
 
     if (!detection) {
-      const actionName = type === 'CLOCK IN' ? 'check-in' : 'check-out';
-      const message = `We could not detect your face, so your ${actionName} was not recorded. Center your face inside the oval and try again.`;
+      const message = t('noFaceAttMsg', type);
       statusEl.innerText = message;
-      showResultPopup({ title: 'Face not detected', message, eyebrow: `${type} NOT RECORDED`, kind: 'error' });
+      showResultPopup({
+        title: t('noFaceTitle'),
+        message,
+        eyebrow: t('attNotRecordedEyebrow', type),
+        kind: 'error'
+      });
       return setButtonsLocked(false);
     }
 
@@ -401,16 +680,21 @@ async function handleAttendance(type) {
     const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
 
     if (bestMatch.label === 'unknown') {
-      const message = `Your face does not match a registered profile. Your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} was not recorded. Please register or update your face profile, then try again.`;
+      const message = t('unrecognizedMsg', type);
       statusEl.innerText = message;
-      showResultPopup({ title: 'Face not recognized', message, eyebrow: `${type} NOT RECORDED`, kind: 'error' });
+      showResultPopup({
+        title: t('unrecognizedTitle'),
+        message,
+        eyebrow: t('attNotRecordedEyebrow', type),
+        kind: 'error'
+      });
       return setButtonsLocked(false);
     }
 
     const [userId, name] = bestMatch.label.split('|');
     const confidence = Math.round((1 - bestMatch.distance) * 100) + '%';
 
-    statusEl.innerText = `Verified ${name} (${confidence}). Recording ${type}...`;
+    statusEl.innerText = `Verified ${name} (${confidence})...`;
 
     const result = await postToGAS({
       action: 'attendance',
@@ -423,30 +707,30 @@ async function handleAttendance(type) {
     });
 
     statusEl.innerText = result.message || `${type} submitted.`;
+    const isIn = type === 'CLOCK IN';
     if (result.success) {
-      const isIn = type === 'CLOCK IN';
       showResultPopup({
-        title: isIn ? 'Check-in successful!' : 'Check-out successful!',
-        message: result.message || (isIn ? 'Your arrival has been recorded successfully.' : 'Your departure has been recorded successfully.'),
-        eyebrow: isIn ? 'ATTENDANCE RECORDED' : 'DEPARTURE RECORDED',
+        title: t('attSuccessTitle', isIn),
+        message: result.message || t('attSuccessDefault', isIn),
+        eyebrow: t('attSuccessEyebrow', isIn),
         meta: `${name} • ${userId}`
       });
     } else {
       showResultPopup({
-        title: type === 'CLOCK IN' ? 'Check-in unsuccessful' : 'Check-out unsuccessful',
-        message: result.message || 'The server did not confirm this attendance submission. No attendance record was confirmed.',
-        eyebrow: 'ATTENDANCE NOT RECORDED',
+        title: t('attFailTitle', isIn),
+        message: result.message || t('attFailTitle', isIn),
+        eyebrow: t('attFailEyebrow'),
         meta: `${name} • ${userId}`,
         kind: 'error'
       });
     }
   } catch (err) {
-    const message = `Your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} could not be submitted. ${err.message || 'Please check your internet connection and try again.'}`;
+    const isIn = type === 'CLOCK IN';
     statusEl.innerText = 'Submission Error: ' + err.message;
     showResultPopup({
-      title: type === 'CLOCK IN' ? 'Check-in unsuccessful' : 'Check-out unsuccessful',
-      message,
-      eyebrow: 'SUBMISSION FAILED',
+      title: t('attFailTitle', isIn),
+      message: err.message,
+      eyebrow: t('subFailEyebrow'),
       kind: 'error'
     });
   } finally {

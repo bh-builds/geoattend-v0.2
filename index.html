@@ -22,14 +22,14 @@
   <main class="app-shell">
     <!-- Hero Banner -->
     <header class="hero-header">
-      <div class="hero-badge">SMART ATTENDANCE</div>
-      <h1 id="eventTitle">Loading Event...</h1>
+      <div class="hero-badge" data-i18n="heroBadge">SMART ATTENDANCE</div>
+      <h1 id="eventTitle" data-i18n="loadingEvent">Loading Event...</h1>
       <p id="locationSubtitle">
-        <span class="dot-pulse"></span> Connecting to venue rules...
+        <span class="dot-pulse"></span> <span data-i18n="connectingVenue">Connecting to venue rules...</span>
       </p>
     </header>
 
-    <!-- Telemetry Pills -->
+    <!-- Telemetry & Language Toggle Row (3 Columns) -->
     <section class="telemetry-row">
       <div id="aiBadge" class="pill pill-neutral">
         <span class="pill-icon">🧠</span>
@@ -39,12 +39,16 @@
         <span class="pill-icon">📍</span>
         <span class="pill-text">GPS: Waiting...</span>
       </div>
+      <button type="button" id="btnLangToggle" class="pill pill-toggle" aria-label="Toggle Language">
+        <span class="pill-icon">🌐</span>
+        <span class="pill-text" id="langLabel">EN / ID</span>
+      </button>
     </section>
 
-    <!-- Interactive Geofence Map Card -->
+    <!-- Interactive Geofence Map Card (2/3 shorter: 45px height) -->
     <div class="map-card">
       <div id="map"></div>
-      <div id="radiusTag" class="map-tag">Geofence Radius: -- m</div>
+      <div id="radiusTag" class="map-tag">Radius: -- m</div>
     </div>
 
     <!-- Camera Viewport with Biometric Framing Guide -->
@@ -54,7 +58,7 @@
       <!-- Biometric Oval Guide (visible when camera is active) -->
       <div id="faceGuide" class="face-guide hidden">
         <div class="oval-frame"></div>
-        <span class="guide-hint">Align your face inside the frame</span>
+        <span class="guide-hint" data-i18n="guideHint">Align your face inside the frame</span>
       </div>
 
       <!-- Activation Overlay -->
@@ -65,9 +69,9 @@
             <circle cx="12" cy="13" r="4"/>
           </svg>
         </div>
-        <h3>Camera & GPS Required</h3>
-        <p>Enable sensors to verify your face and location at the venue.</p>
-        <button id="btnStartSensors" class="btn btn-primary btn-glow">
+        <h3 data-i18n="overlayTitle">Camera & GPS Required</h3>
+        <p data-i18n="overlayDesc">Enable sensors to verify your face and location at the venue.</p>
+        <button id="btnStartSensors" class="btn btn-primary btn-glow" data-i18n="btnActivate">
           Activate Camera & GPS
         </button>
       </div>
@@ -80,20 +84,20 @@
 
     <!-- Mode Switcher Tabs -->
     <div class="tab-bar">
-      <button type="button" class="tab-btn active" data-tab="panel-attendance">Check In / Out</button>
-      <button type="button" class="tab-btn" data-tab="panel-register">Register Face</button>
+      <button type="button" class="tab-btn active" data-tab="panel-attendance" data-i18n="tabAttendance">Check In / Out</button>
+      <button type="button" class="tab-btn" data-tab="panel-register" data-i18n="tabRegister">Register Face</button>
     </div>
 
     <!-- Panel 1: Attendance Actions -->
     <section id="panel-attendance" class="tab-panel active">
       <div class="action-grid">
         <button id="btnClockIn" class="btn btn-emerald" disabled>
-          <span class="btn-title">Clock In</span>
-          <span class="btn-sub">Arrival / Datang</span>
+          <span class="btn-title" data-i18n="btnClockInTitle">Clock In</span>
+          <span class="btn-sub" data-i18n="btnClockInSub">Arrival</span>
         </button>
         <button id="btnClockOut" class="btn btn-rose" disabled>
-          <span class="btn-title">Clock Out</span>
-          <span class="btn-sub">Departure / Pulang</span>
+          <span class="btn-title" data-i18n="btnClockOutTitle">Clock Out</span>
+          <span class="btn-sub" data-i18n="btnClockOutSub">Departure</span>
         </button>
       </div>
     </section>
@@ -102,14 +106,14 @@
     <section id="panel-register" class="tab-panel">
       <div class="form-stack">
         <div class="input-group">
-          <label for="regId">NIP / Participant ID</label>
-          <input type="text" id="regId" placeholder="e.g. 198109042009121001" autocomplete="off">
+          <label for="regId" data-i18n="labelId">NIP / Participant ID</label>
+          <input type="text" id="regId" data-i18n-placeholder="placeholderId" placeholder="e.g. 198109042009121001" autocomplete="off">
         </div>
         <div class="input-group">
-          <label for="regName">Full Name</label>
-          <input type="text" id="regName" placeholder="Enter your full name" autocomplete="off">
+          <label for="regName" data-i18n="labelName">Full Name</label>
+          <input type="text" id="regName" data-i18n-placeholder="placeholderName" placeholder="Enter your full name" autocomplete="off">
         </div>
-        <button id="btnRegister" class="btn btn-teal" disabled>
+        <button id="btnRegister" class="btn btn-teal" disabled data-i18n="btnSaveProfile">
           Capture & Save Face Profile
         </button>
       </div>
@@ -130,7 +134,7 @@
       <h2 id="resultTitle">Completed successfully</h2>
       <p id="resultMessage">Your request has been saved.</p>
       <div class="result-meta" id="resultMeta"></div>
-      <button type="button" class="result-button" id="resultOk">Continue</button>
+      <button type="button" class="result-button" id="resultOk" data-i18n="btnContinue">Continue</button>
     </section>
   </div>
 </body>

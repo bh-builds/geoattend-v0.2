@@ -17,6 +17,34 @@ let cameraReady = false;
 let map = null;
 let userMarker = null;
 
+// Accessible, branded HTML result popup (replaces browser alert dialogs).
+function showResultPopup({ title, message, eyebrow = 'SUCCESS', meta = '', kind = 'success' }) {
+  const modal = document.getElementById('resultModal');
+  const icon = document.getElementById('resultIcon');
+  document.getElementById('resultTitle').textContent = title;
+  document.getElementById('resultMessage').textContent = message || '';
+  document.getElementById('resultEyebrow').textContent = eyebrow;
+  document.getElementById('resultMeta').textContent = meta;
+  icon.className = `result-icon ${kind}`;
+  icon.innerHTML = kind === 'success' ? '<span>✓</span>' : '<span>!</span>';
+  modal.classList.add('show');
+  modal.setAttribute('aria-hidden', 'false');
+  document.getElementById('resultOk').focus();
+}
+
+function closeResultPopup() {
+  const modal = document.getElementById('resultModal');
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+document.getElementById('resultClose').addEventListener('click', closeResultPopup);
+document.getElementById('resultOk').addEventListener('click', closeResultPopup);
+document.querySelector('[data-close-modal]').addEventListener('click', closeResultPopup);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeResultPopup();
+});
+
 // 1. Tab Switching Logic
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -266,8 +294,9 @@ async function postToGAS(payload) {
 async function handleRegister() {
   const userId = document.getElementById('regId').value.trim();
   const name = document.getElementById('regName').value.trim();
-  if (!userId || !name) return alert('Please enter both ID and Full Name.');
+  if (!userId || !name) return showResultPopup({ title: 'Complete your details', message: 'Please enter both your participant ID and full name.', eyebrow: 'MISSING INFORMATION', kind: 'error' });
 
+  const wasRegistered = rawUsersCache.some(u => String(u.userId) === userId);
   setButtonsLocked(true);
   statusEl.innerText = 'Scanning face for registration... Hold still.';
 
@@ -278,7 +307,9 @@ async function handleRegister() {
       .withFaceDescriptor();
 
     if (!detection) {
-      statusEl.innerText = 'No face detected. Ensure bright, even lighting.';
+      const message = 'No face was detected. Move into the camera frame, face the camera, and make sure the lighting is bright and even.';
+      statusEl.innerText = message;
+      showResultPopup({ title: 'Face not detected', message, eyebrow: 'REGISTRATION NOT COMPLETED', kind: 'error' });
       return setButtonsLocked(false);
     }
 
@@ -296,15 +327,27 @@ async function handleRegister() {
         name,
         labeledDescriptor: new faceapi.LabeledFaceDescriptors(`${userId}|${name}`, [detection.descriptor])
       });
+      rawUsersCache = rawUsersCache.filter(u => String(u.userId) !== userId);
+      rawUsersCache.push({ userId, name, descriptor: Array.from(detection.descriptor) });
       document.getElementById('regId').value = '';
       document.getElementById('regName').value = '';
       document.querySelector('[data-tab="panel-attendance"]').click();
+      const actionWord = wasRegistered ? 'updated' : 'registered';
+      statusEl.innerText = `Face profile ${actionWord} successfully for ${name}.`;
+      showResultPopup({
+        title: wasRegistered ? 'Face profile updated!' : 'Face registered!',
+        message: wasRegistered ? `${name}'s facial profile has been updated successfully.` : `${name} is now registered and can use facial recognition for attendance.`,
+        eyebrow: wasRegistered ? 'PROFILE UPDATED' : 'REGISTRATION COMPLETE',
+        meta: `Participant ID: ${userId}`
+      });
+    } else {
+      statusEl.innerText = result.message || 'Face registration could not be completed.';
+      showResultPopup({ title: 'Registration not completed', message: result.message || 'The server did not confirm the registration.', eyebrow: 'PLEASE TRY AGAIN', kind: 'error' });
     }
-
-    statusEl.innerText = result.message;
-    alert(result.message);
   } catch (err) {
+    const message = `We could not save the face profile. ${err.message || 'Please check your connection and try again.'}`;
     statusEl.innerText = 'Registration Error: ' + err.message;
+    showResultPopup({ title: 'Face registration failed', message, eyebrow: 'SAVE FAILED', kind: 'error' });
   } finally {
     setButtonsLocked(false);
   }
@@ -312,8 +355,8 @@ async function handleRegister() {
 
 // 7. Verify Face & Record Attendance
 async function handleAttendance(type) {
-  if (!currentCoords) return alert('Waiting for GPS signal...');
-  if (registeredUsers.length === 0) return alert('No registered faces found. Switch to "Register Face" first.');
+  if (!currentCoords) return showResultPopup({ title: 'GPS is not ready', message: 'Wait until your location is detected, then try again.', eyebrow: 'LOCATION REQUIRED', kind: 'error' });
+  if (registeredUsers.length === 0) return showResultPopup({ title: 'No face profile found', message: 'Please register your face before checking in or out.', eyebrow: 'REGISTRATION REQUIRED', kind: 'error' });
 
   setButtonsLocked(true);
   statusEl.innerText = 'Verifying facial identity...';
@@ -325,7 +368,10 @@ async function handleAttendance(type) {
       .withFaceDescriptor();
 
     if (!detection) {
-      statusEl.innerText = 'Face not detected. Center your face inside the oval.';
+      const actionName = type === 'CLOCK IN' ? 'check-in' : 'check-out';
+      const message = `We could not detect your face, so your ${actionName} was not recorded. Center your face inside the oval and try again.`;
+      statusEl.innerText = message;
+      showResultPopup({ title: 'Face not detected', message, eyebrow: `${type} NOT RECORDED`, kind: 'error' });
       return setButtonsLocked(false);
     }
 
@@ -336,7 +382,9 @@ async function handleAttendance(type) {
     const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
 
     if (bestMatch.label === 'unknown') {
-      statusEl.innerText = 'Face not recognized. Switch to "Register Face" tab first.';
+      const message = `Your face does not match a registered profile. Your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} was not recorded. Please register or update your face profile, then try again.`;
+      statusEl.innerText = message;
+      showResultPopup({ title: 'Face not recognized', message, eyebrow: `${type} NOT RECORDED`, kind: 'error' });
       return setButtonsLocked(false);
     }
 
@@ -355,10 +403,33 @@ async function handleAttendance(type) {
       confidence
     });
 
-    statusEl.innerText = result.message;
-    alert(result.message);
+    statusEl.innerText = result.message || `${type} submitted.`;
+    if (result.success) {
+      const isIn = type === 'CLOCK IN';
+      showResultPopup({
+        title: isIn ? 'Check-in successful!' : 'Check-out successful!',
+        message: result.message || (isIn ? 'Your arrival has been recorded successfully.' : 'Your departure has been recorded successfully.'),
+        eyebrow: isIn ? 'ATTENDANCE RECORDED' : 'DEPARTURE RECORDED',
+        meta: `${name} • ${userId}`
+      });
+    } else {
+      showResultPopup({
+        title: type === 'CLOCK IN' ? 'Check-in unsuccessful' : 'Check-out unsuccessful',
+        message: result.message || 'The server did not confirm this attendance submission. No attendance record was confirmed.',
+        eyebrow: 'ATTENDANCE NOT RECORDED',
+        meta: `${name} • ${userId}`,
+        kind: 'error'
+      });
+    }
   } catch (err) {
+    const message = `Your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} could not be submitted. ${err.message || 'Please check your internet connection and try again.'}`;
     statusEl.innerText = 'Submission Error: ' + err.message;
+    showResultPopup({
+      title: type === 'CLOCK IN' ? 'Check-in unsuccessful' : 'Check-out unsuccessful',
+      message,
+      eyebrow: 'SUBMISSION FAILED',
+      kind: 'error'
+    });
   } finally {
     setButtonsLocked(false);
   }

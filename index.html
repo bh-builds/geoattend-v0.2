@@ -120,5 +120,18 @@
     </footer>
   </main>
 
+  <!-- Success / feedback modal -->
+  <div id="resultModal" class="result-modal" aria-hidden="true">
+    <div class="result-backdrop" data-close-modal></div>
+    <section class="result-dialog" role="dialog" aria-modal="true" aria-labelledby="resultTitle" aria-describedby="resultMessage">
+      <button type="button" class="result-close" id="resultClose" aria-label="Close">&times;</button>
+      <div class="result-icon" id="resultIcon" aria-hidden="true"><span>✓</span></div>
+      <div class="result-eyebrow" id="resultEyebrow">SUCCESS</div>
+      <h2 id="resultTitle">Completed successfully</h2>
+      <p id="resultMessage">Your request has been saved.</p>
+      <div class="result-meta" id="resultMeta"></div>
+      <button type="button" class="result-button" id="resultOk">Continue</button>
+    </section>
+  </div>
 </body>
 </html>

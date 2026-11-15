@@ -3,61 +3,120 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GeoAttend - Facial & GPS Attendance</title>
-  <!-- Leaflet Map CSS & JS -->
+  <title>GeoAttend • HKN ke-62</title>
+  <!-- Google Font: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Leaflet Map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- face-api.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-  <!-- App Styles & Logic -->
+  <!-- App Assets -->
   <link rel="stylesheet" href="style.css">
   <script defer src="app.js"></script>
 </head>
 <body>
 
-  <main class="container">
-    <!-- Dynamic Event Header -->
-    <header class="header-card">
+  <main class="app-shell">
+    <!-- Hero Banner -->
+    <header class="hero-header">
+      <div class="hero-badge">SMART ATTENDANCE</div>
       <h1 id="eventTitle">Loading Event...</h1>
-      <p id="locationSubtitle">Connecting to configuration...</p>
+      <p id="locationSubtitle">
+        <span class="dot-pulse"></span> Connecting to venue rules...
+      </p>
     </header>
 
-    <!-- System Status Badges -->
-    <section class="badges">
-      <div id="aiBadge" class="badge">AI Models: Loading...</div>
-      <div id="gpsBadge" class="badge">GPS: Waiting...</div>
-    </section>
-
-    <!-- Live Geofence Map -->
-    <div id="map"></div>
-
-    <!-- Camera Viewport -->
-    <section class="video-wrapper">
-      <video id="video" autoplay muted playsinline></video>
-      <div id="camOverlay" class="video-overlay">
-        <p>Tap below to enable Camera and GPS location for attendance verification.</p>
-        <button id="btnStartSensors" class="btn-primary">Activate Camera & GPS</button>
+    <!-- Telemetry Pills -->
+    <section class="telemetry-row">
+      <div id="aiBadge" class="pill pill-neutral">
+        <span class="pill-icon">🧠</span>
+        <span class="pill-text">AI: Loading...</span>
+      </div>
+      <div id="gpsBadge" class="pill pill-neutral">
+        <span class="pill-icon">📍</span>
+        <span class="pill-text">GPS: Waiting...</span>
       </div>
     </section>
 
-    <div id="status" role="status">Initializing system...</div>
+    <!-- Interactive Geofence Map Card -->
+    <div class="map-card">
+      <div id="map"></div>
+      <div id="radiusTag" class="map-tag">Geofence Radius: -- m</div>
+    </div>
 
-    <!-- Check-In / Check-Out Controls -->
-    <section class="btn-group">
-      <button id="btnClockIn" class="btn-primary" disabled>Clock In</button>
-      <button id="btnClockOut" class="btn-danger" disabled>Clock Out</button>
+    <!-- Camera Viewport with Biometric Framing Guide -->
+    <section class="camera-card">
+      <video id="video" autoplay muted playsinline></video>
+
+      <!-- Biometric Oval Guide (visible when camera is active) -->
+      <div id="faceGuide" class="face-guide hidden">
+        <div class="oval-frame"></div>
+        <span class="guide-hint">Align your face inside the frame</span>
+      </div>
+
+      <!-- Activation Overlay -->
+      <div id="camOverlay" class="video-overlay">
+        <div class="cam-icon-ring">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
+        <h3>Camera & GPS Required</h3>
+        <p>Enable sensors to verify your face and location at the venue.</p>
+        <button id="btnStartSensors" class="btn btn-primary btn-glow">
+          Activate Camera & GPS
+        </button>
+      </div>
     </section>
 
-    <!-- New Participant Face Registration -->
-    <section class="register-section">
-      <h2>New Participant Registration</h2>
-      <input type="text" id="regId" placeholder="NIP / Participant ID" autocomplete="off">
-      <input type="text" id="regName" placeholder="Full Name" autocomplete="off">
-      <button id="btnRegister" class="btn-success" disabled>Capture & Register Face</button>
+    <!-- Live Status Toast Bar -->
+    <div id="status" class="status-bar" role="status">
+      Initializing system...
+    </div>
+
+    <!-- Mode Switcher Tabs -->
+    <div class="tab-bar">
+      <button type="button" class="tab-btn active" data-tab="panel-attendance">Check In / Out</button>
+      <button type="button" class="tab-btn" data-tab="panel-register">Register Face</button>
+    </div>
+
+    <!-- Panel 1: Attendance Actions -->
+    <section id="panel-attendance" class="tab-panel active">
+      <div class="action-grid">
+        <button id="btnClockIn" class="btn btn-emerald" disabled>
+          <span class="btn-title">Clock In</span>
+          <span class="btn-sub">Arrival / Datang</span>
+        </button>
+        <button id="btnClockOut" class="btn btn-rose" disabled>
+          <span class="btn-title">Clock Out</span>
+          <span class="btn-sub">Departure / Pulang</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Panel 2: Face Enrollment -->
+    <section id="panel-register" class="tab-panel">
+      <div class="form-stack">
+        <div class="input-group">
+          <label for="regId">NIP / Participant ID</label>
+          <input type="text" id="regId" placeholder="e.g. 198109042009121001" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="regName">Full Name</label>
+          <input type="text" id="regName" placeholder="Enter your full name" autocomplete="off">
+        </div>
+        <button id="btnRegister" class="btn btn-teal" disabled>
+          Capture & Save Face Profile
+        </button>
+      </div>
     </section>
 
     <footer class="app-footer">
-      <span id="versionInfo">GeoAttend • GitHub Frontend</span>
+      <span id="versionInfo">GeoAttend • Kemenkes RI</span>
     </footer>
   </main>
 

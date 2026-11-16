@@ -201,9 +201,19 @@ function t(key, ...args) {
   return typeof val === 'function' ? val(...args) : val;
 }
 
+const FLAG_ASSETS = {
+  en: 'data:image/webp;base64,UklGRlwEAABXRUJQVlA4WAoAAAAQAAAAHwAAHwAAQUxQSPQAAAABgFtbe9vmA/5OmsChzbHiRvQ84gAOncI0zmGGHCsA/D9H+P/tBSKCgdtGipplOuw8At8IAiy2k8tX1dfLSbsISECNCOzs3bLC7f4OECsSDEeZ7It+SUtP5tEQUskrx2RWVtBMHq9BfuTmhom/knjXfEsRy/fMNJB5u4SIIIOzr2xLZwMJgs6aycQOEtZLUau0lPWAQ3tNZh5i7olql/Jpbpc9HfRsZ1o8Kjq9pnqkvH6jkzf+O/6Of8nUfZD/u/i/q/+/8P9Xgo7JXncQ/3+NiKVbZlu+X0b87qtbm69umorx1o5MvlyBuH39N3GhHlfGlrgCVlA4IEIDAACQEwCdASogACAAAQAcJbACdMoRwN6rwhm23c/JA+gH7N+VX+A7QH2Z+pX5mfqA8wH6N/5brAfir7gH6m9YB6AH6W9ZP+zn7k/AL/Fv7J/6sFF2s/QPxA5CvJcvgPyA9Gv6rUDrTF7m87P9V/Jn+q+/l/W+U38Y/s/+29wb+Tfzn/Wf1X91PiO6if9Szzi+xZUEgyWJrJeUxY/Xpw0kjDJd45+x4ngA/shciOqzsujp7dKQ34IyupV14mdj75wJeOXAUr2uF7KjvtswtM6mAYGwoR00bl/5FMLDFtFNae+MJnos8ycFa52F1QO8Jx83dWmd/OyuP17+p420D2XQhh/tM/eEWI/7Z3COvmjDVeE3h+K6LtM0/I141j9c4q/V4KT9ZTLB5LjcHGBhOHZb1nnRsr4fgc7s7ATV6jcd9+dNnm/7rZP+C/lUDjUakXtgIi65y2S9zwXWt7tw70yfzVa1So9lkF1Y5chuOgB24hxdEw4lTroMNJCWBrITupHsVX8Ugrjsww1wJcUfKz6hcU/w8if8mBeDheeGfSbbar6OWKnTr/racWLHESZg//uevwKQn1BQCX/xEa/rjMOKJO9YmFH80bhwlLhY46HwHE3dZ/8mvYqNRibPyhsW1OplpcP6G2HhQMul/IPa+zlRDyG+dWbUnSn0r+74YR1IjoAe/0V/9IuNbdaAMdfxt/Qa5VufxnTvQRyXnPmYsilJs58NSYNrv7379F/0I1Dwtv7t1d4Sdor1pKvbirS4FvsscaUs3vp26wQBCkn4jbw2modL1d9ph9oT/F4futjDGCtjf/QK4hB0iP9k8wcG2k0MmSxCav3m9BxtQuQKhgIymCw00vrKH7v+lX7J9Y9Egtdkj6iHcAVqoX+Sh8eiv6gd/8U3jd1eJQWnbmHPLvzAQt08vxLtvKxVJG47ULirsW7VneGMZBo0zYE395TFCzv2/Ly2W7QNlvCgCWqI+gkWVWiYdcIJ1rAEPvx0aQwBv2tZZ5w7ggkNFL6Fj6+vV88YcmrOomvfCmIM1M0EMNSgUMjtx+y//jPJl8d0fKnH2HMvQLgqz+dWdzsc/kzcbEevpI2geAQvqseifmK3ZH3kSc9wAAA=',
+  id: 'data:image/webp;base64,UklGRuABAABXRUJQVlA4WAoAAAAQAAAAHwAAHwAAQUxQSO8AAAABgF1bm+rkG1nJo+HdQIpBSrg8B8px78KtAIcKMvefD53M10FEMHDbSFGzTIedR+AvEeiMxqd3T093p+NRB4go4jzmmhsWuNmcg3cFeWDjhWRr+QdrSb5sAL6Q+7tkMhawRO4O4P/lpQumzCnkxIulP8n53iUnrGDCq97vhoCD31yX9hEQsPqba9Mqgpv5NKuV2eeMQ8PEahIbdB+z1cvyY3eFmQKZy9tsFbXcOqcpMp4/qJ2HJ1VPz7L0jr5EP0j/Lvp31f8L/b/S/0sE7Ev/teaLy553sq/++3Knypd9eNnXSlxoCnFhSlw5qYgrAABWUDggygAAAHAGAJ0BKiAAIAA+RRqJRCKhoRv0ACgERLUAUf1APwAWoBlAH7O+iAChgGNYrKQ0pmSyrHZ2CFKDWv15UAD+9CX4n0MkeVP+7vtP/i+SrhlndCJldWuv/8ThznP8rhVegHF8Wr84i/MvP+ZVk7pCDRu6zWZAJ9pSO2c79foqveD44pjYLD9StWa0fz//i581/nnFr+zT0wZC+nn/1qlzSbEcwui0t4I8rbYS+Y9YRdXf1VMFjq/SznmwjEXOsew/YoH5lfd6NtYAAAA='
+};
+
 function applyLanguage() {
   document.documentElement.lang = currentLang;
   document.getElementById('langLabel').textContent = currentLang === 'en' ? 'EN' : 'ID';
+  const flagImg = document.getElementById('langFlag');
+  if (flagImg) {
+    flagImg.src = FLAG_ASSETS[currentLang] || FLAG_ASSETS.en;
+    flagImg.alt = currentLang === 'en' ? 'English' : 'Bahasa Indonesia';
+  }
 
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');

@@ -1,5 +1,5 @@
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbz1l_aMFoI6UyxQDz6i1mP2PuFLLXXbGOdgEoRGGhBOpCU3JcaiNm4oJkTvj9T6M2pjJg/exec';
-const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+const HUMAN_MODELS_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models/';
 
 const video = document.getElementById('video');
 const statusEl = document.getElementById('status');
@@ -10,7 +10,8 @@ const faceGuide = document.getElementById('faceGuide');
 
 let currentLang = localStorage.getItem('geoattend_lang') || 'en';
 let appConfig = null;
-let registeredUsers = [];
+let human = null;
+let registeredUsers = []; // { userId, name, embedding }
 let rawUsersCache = [];
 let currentCoords = null;
 let modelsReady = false;
@@ -21,6 +22,11 @@ let lastDistance = null;
 let lastInside = true;
 let map = null;
 let userMarker = null;
+
+// Anti-spoof & recognition thresholds
+const MIN_ANTISPOOF_SCORE = 0.50;
+const MIN_LIVENESS_SCORE = 0.50;
+const MIN_SIMILARITY_SCORE = 0.65;
 
 const I18N = {
   en: {
@@ -57,9 +63,9 @@ const I18N = {
     btnContinue: 'Continue',
     statusInit: 'Initializing system...',
     statusFetching: 'Fetching event configuration from Google Sheets...',
-    statusConfigLoaded: 'Config loaded. Click "Activate Camera & GPS" above.',
+    statusConfigLoaded: 'Config loaded. Tap "Activate Camera & GPS" above.',
     statusReqSensors: 'Requesting camera & GPS permissions...',
-    statusReady: 'Ready! Align your face inside the circle frame.',
+    statusReady: 'Ready! Align your face inside the oval frame.',
     statusConnFailed: 'Connection Failed',
     statusConnFailedSub: 'Could not reach Google Apps Script',
     statusTimeout: 'Timeout: Google Apps Script took too long to respond.',
@@ -68,14 +74,17 @@ const I18N = {
     statusCamBusy: 'Camera is busy in another tab or app. Close it and tap Retry.',
     statusCamNotFound: 'No camera hardware detected on this device.',
     statusGpsUnsupported: 'Camera active, but GPS is unsupported by this browser.',
-    statusScanningReg: 'Scanning face for registration... Hold still.',
-    statusVerifying: 'Verifying facial identity...',
+    statusScanningReg: 'Scanning face & liveness for registration... Hold still.',
+    statusVerifying: 'Verifying live facial identity...',
     missingInfoTitle: 'Complete your details',
     missingInfoMsg: 'Please enter both your participant ID and full name.',
     missingInfoEyebrow: 'MISSING INFORMATION',
     noFaceTitle: 'Face not detected',
-    noFaceRegMsg: 'No face was detected. Move into the camera frame, face the camera, and make sure the lighting is bright and even.',
+    noFaceRegMsg: 'No face was detected. Move into the camera frame, look straight ahead, and ensure bright, even lighting.',
     noFaceRegEyebrow: 'REGISTRATION NOT COMPLETED',
+    spoofTitle: 'Liveness check failed',
+    spoofMsg: (realPct, livePct) => `Anti-spoofing check failed (Real: ${realPct}%, Live: ${livePct}%). Please use a live camera feed directly—not a photo or screen—under good lighting.`,
+    spoofEyebrow: 'ANTI-SPOOFING ALERT',
     regUpdatedTitle: 'Face profile updated!',
     regCreatedTitle: 'Face registered!',
     regUpdatedMsg: (name) => `${name}'s facial profile has been updated successfully.`,
@@ -116,7 +125,7 @@ const I18N = {
     gpsBlocked: 'GPS: Diblokir',
     gpsUnsupported: 'GPS: N/A',
     gpsDist: (d, inside) => `${d}m (${inside ? 'Dalam' : 'Luar'})`,
-    guideHint: 'Posisikan wajah di dalam bingkai lingkaran',
+    guideHint: 'Posisikan wajah di dalam bingkai oval',
     overlayTitle: 'Kamera & GPS Diperlukan',
     overlayDesc: 'Aktifkan sensor untuk memverifikasi wajah dan lokasi Anda di tempat acara.',
     btnActivate: 'Aktifkan Kamera & GPS',
@@ -147,14 +156,17 @@ const I18N = {
     statusCamBusy: 'Kamera sedang digunakan aplikasi atau tab lain. Tutup lalu coba lagi.',
     statusCamNotFound: 'Perangkat kamera tidak ditemukan.',
     statusGpsUnsupported: 'Kamera aktif, tetapi GPS tidak didukung oleh browser ini.',
-    statusScanningReg: 'Memindai wajah untuk pendaftaran... Harap diam sejenak.',
-    statusVerifying: 'Memverifikasi identitas wajah...',
+    statusScanningReg: 'Memindai wajah & keaslian untuk pendaftaran... Harap diam sejenak.',
+    statusVerifying: 'Memverifikasi identitas wajah langsung...',
     missingInfoTitle: 'Lengkapi data Anda',
     missingInfoMsg: 'Harap masukkan ID peserta dan nama lengkap Anda.',
     missingInfoEyebrow: 'DATA BELUM LENGKAP',
     noFaceTitle: 'Wajah tidak terdeteksi',
     noFaceRegMsg: 'Wajah tidak terdeteksi. Posisikan wajah menghadap kamera dengan pencahayaan yang terang dan merata.',
     noFaceRegEyebrow: 'PENDAFTARAN GAGAL',
+    spoofTitle: 'Pemeriksaan keaslian wajah gagal',
+    spoofMsg: (realPct, livePct) => `Deteksi anti-spoofing gagal (Keaslian: ${realPct}%, Liveness: ${livePct}%). Harap gunakan wajah langsung di depan kamera (bukan foto atau layar HP) dengan cahaya terang.`,
+    spoofEyebrow: 'PERINGATAN ANTI-SPOOFING',
     regUpdatedTitle: 'Profil wajah diperbarui!',
     regCreatedTitle: 'Wajah berhasil didaftarkan!',
     regUpdatedMsg: (name) => `Profil wajah ${name} berhasil diperbarui.`,
@@ -207,7 +219,6 @@ function applyLanguage() {
     }
   });
 
-  // Update dynamic badges & headers
   if (modelsReady) {
     aiBadge.querySelector('.pill-text').textContent = t('aiReady');
   } else if (modelsFailed) {
@@ -294,11 +305,11 @@ document.getElementById('btnClockIn').addEventListener('click', () => handleAtte
 document.getElementById('btnClockOut').addEventListener('click', () => handleAttendance('CLOCK OUT'));
 document.getElementById('btnRegister').addEventListener('click', handleRegister);
 
-// 3. Initialize Backend Config & AI Models after all deferred scripts load
+// 3. Initialize Backend Config & @vladmandic/human AI Models
 window.addEventListener('load', () => {
   applyLanguage();
   loadBackendConfig();
-  loadFaceModels();
+  loadHumanModels();
 });
 
 async function loadBackendConfig() {
@@ -328,7 +339,7 @@ async function loadBackendConfig() {
     document.getElementById('locationSubtitle').innerText =
       `${appConfig.locationName} • ${appConfig.restrict ? 'Strict Geofence' : 'Open Location'}`;
     document.getElementById('radiusTag').innerText = t('radiusTag', appConfig.allowedRadius);
-    document.getElementById('versionInfo').innerText = `GeoAttend • API ${initRes.version || 'v2'}`;
+    document.getElementById('versionInfo').innerText = `GeoAttend • Human AI ${initRes.version || 'v2'}`;
 
     initMap(appConfig);
 
@@ -346,17 +357,38 @@ async function loadBackendConfig() {
   }
 }
 
-async function loadFaceModels() {
+async function loadHumanModels() {
   try {
-    if (typeof faceapi === 'undefined') {
-      throw new Error('face-api.js failed to load from CDN');
+    const HumanCtor = window.Human?.Human || window.Human;
+    if (!HumanCtor) {
+      throw new Error('@vladmandic/human failed to load from CDN');
     }
 
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-    ]);
+    human = new HumanCtor({
+      backend: 'webgl',
+      modelBasePath: HUMAN_MODELS_BASE,
+      async: true,
+      warmup: 'face',
+      cacheSensitivity: 0, // Always run fresh detection when button is clicked
+      filter: { enabled: true, equalization: true },
+      face: {
+        enabled: true,
+        detector: { enabled: true, rotation: true, maxDetected: 1, minConfidence: 0.5 },
+        mesh: { enabled: true },
+        iris: { enabled: false },
+        description: { enabled: true },
+        emotion: { enabled: false },
+        antispoof: { enabled: true },
+        liveness: { enabled: true }
+      },
+      body: { enabled: false },
+      hand: { enabled: false },
+      object: { enabled: false },
+      gesture: { enabled: false }
+    });
+
+    await human.load();
+    await human.warmup();
 
     modelsReady = true;
     aiBadge.querySelector('.pill-text').innerText = t('aiReady');
@@ -372,14 +404,47 @@ async function loadFaceModels() {
 }
 
 function buildUserDescriptors() {
-  if (!modelsReady || !rawUsersCache.length) return;
-  registeredUsers = rawUsersCache.map(u => ({
-    ...u,
-    labeledDescriptor: new faceapi.LabeledFaceDescriptors(
-      `${u.userId}|${u.name}`,
-      [new Float32Array(u.descriptor)]
-    )
-  }));
+  if (!rawUsersCache.length) return;
+  // Filter compatible embeddings (Human FaceRes uses 1024-D vectors; ignore legacy 128-D vectors until re-registered)
+  registeredUsers = rawUsersCache
+    .filter(u => Array.isArray(u.descriptor) && u.descriptor.length > 0)
+    .map(u => ({
+      userId: String(u.userId),
+      name: u.name,
+      embedding: u.descriptor
+    }));
+}
+
+// Run multi-frame Human detection + anti-spoofing + liveness check
+async function analyzeLiveFace() {
+  // Sample 2 consecutive frames (~120ms apart) so temporal liveness & anti-spoofing stabilize
+  await human.detect(video);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const result = await human.detect(video);
+
+  const face = result?.face?.[0];
+  if (!face || !face.embedding || face.embedding.length === 0) {
+    return { ok: false, reason: 'no_face' };
+  }
+
+  const realScore = typeof face.real === 'number' ? face.real : 1;
+  const liveScore = typeof face.live === 'number' ? face.live : 1;
+
+  if (realScore < MIN_ANTISPOOF_SCORE || liveScore < MIN_LIVENESS_SCORE) {
+    return {
+      ok: false,
+      reason: 'spoof',
+      realPct: Math.round(realScore * 100),
+      livePct: Math.round(liveScore * 100)
+    };
+  }
+
+  return {
+    ok: true,
+    embedding: Array.from(face.embedding),
+    realPct: Math.round(realScore * 100),
+    livePct: Math.round(liveScore * 100)
+  };
 }
 
 function initMap(cfg) {
@@ -545,7 +610,7 @@ async function postToGAS(payload) {
   return res.json();
 }
 
-// 6. Register New Face Profile
+// 6. Register New Face Profile (with Liveness & Anti-Spoofing)
 async function handleRegister() {
   const userId = document.getElementById('regId').value.trim();
   const name = document.getElementById('regName').value.trim();
@@ -563,20 +628,28 @@ async function handleRegister() {
   statusEl.innerText = t('statusScanningReg');
 
   try {
-    const detection = await faceapi
-      .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-      .withFaceLandmarks()
-      .withFaceDescriptor();
+    const scan = await analyzeLiveFace();
 
-    if (!detection) {
-      const message = t('noFaceRegMsg');
-      statusEl.innerText = message;
-      showResultPopup({
-        title: t('noFaceTitle'),
-        message,
-        eyebrow: t('noFaceRegEyebrow'),
-        kind: 'error'
-      });
+    if (!scan.ok) {
+      if (scan.reason === 'spoof') {
+        const message = t('spoofMsg', scan.realPct, scan.livePct);
+        statusEl.innerText = message;
+        showResultPopup({
+          title: t('spoofTitle'),
+          message,
+          eyebrow: t('spoofEyebrow'),
+          kind: 'error'
+        });
+      } else {
+        const message = t('noFaceRegMsg');
+        statusEl.innerText = message;
+        showResultPopup({
+          title: t('noFaceTitle'),
+          message,
+          eyebrow: t('noFaceRegEyebrow'),
+          kind: 'error'
+        });
+      }
       return setButtonsLocked(false);
     }
 
@@ -584,7 +657,7 @@ async function handleRegister() {
       action: 'register',
       userId,
       name,
-      descriptor: Array.from(detection.descriptor)
+      descriptor: scan.embedding
     });
 
     if (result.success) {
@@ -592,10 +665,10 @@ async function handleRegister() {
       registeredUsers.push({
         userId,
         name,
-        labeledDescriptor: new faceapi.LabeledFaceDescriptors(`${userId}|${name}`, [detection.descriptor])
+        embedding: scan.embedding
       });
       rawUsersCache = rawUsersCache.filter(u => String(u.userId) !== userId);
-      rawUsersCache.push({ userId, name, descriptor: Array.from(detection.descriptor) });
+      rawUsersCache.push({ userId, name, descriptor: scan.embedding });
       document.getElementById('regId').value = '';
       document.getElementById('regName').value = '';
       document.querySelector('[data-tab="panel-attendance"]').click();
@@ -606,7 +679,7 @@ async function handleRegister() {
         title: wasRegistered ? t('regUpdatedTitle') : t('regCreatedTitle'),
         message: msg,
         eyebrow: wasRegistered ? t('regUpdatedEyebrow') : t('regCreatedEyebrow'),
-        meta: t('regMeta', userId)
+        meta: `${t('regMeta', userId)} • Real ${scan.realPct}%`
       });
     } else {
       statusEl.innerText = result.message || t('regFailedTitle');
@@ -630,7 +703,7 @@ async function handleRegister() {
   }
 }
 
-// 7. Verify Face & Record Attendance
+// 7. Verify Live Face & Record Attendance
 async function handleAttendance(type) {
   if (!currentCoords) {
     return showResultPopup({
@@ -653,30 +726,37 @@ async function handleAttendance(type) {
   statusEl.innerText = t('statusVerifying');
 
   try {
-    const detection = await faceapi
-      .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-      .withFaceLandmarks()
-      .withFaceDescriptor();
+    const scan = await analyzeLiveFace();
 
-    if (!detection) {
-      const message = t('noFaceAttMsg', type);
-      statusEl.innerText = message;
-      showResultPopup({
-        title: t('noFaceTitle'),
-        message,
-        eyebrow: t('attNotRecordedEyebrow', type),
-        kind: 'error'
-      });
+    if (!scan.ok) {
+      if (scan.reason === 'spoof') {
+        const message = t('spoofMsg', scan.realPct, scan.livePct);
+        statusEl.innerText = message;
+        showResultPopup({
+          title: t('spoofTitle'),
+          message,
+          eyebrow: t('spoofEyebrow'),
+          kind: 'error'
+        });
+      } else {
+        const message = t('noFaceAttMsg', type);
+        statusEl.innerText = message;
+        showResultPopup({
+          title: t('noFaceTitle'),
+          message,
+          eyebrow: t('attNotRecordedEyebrow', type),
+          kind: 'error'
+        });
+      }
       return setButtonsLocked(false);
     }
 
-    const faceMatcher = new faceapi.FaceMatcher(
-      registeredUsers.map(u => u.labeledDescriptor),
-      0.5
+    // Filter stored embeddings matching current vector length (1024-D for Human FaceRes)
+    const compatibleUsers = registeredUsers.filter(
+      u => u.embedding.length === scan.embedding.length
     );
-    const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
 
-    if (bestMatch.label === 'unknown') {
+    if (compatibleUsers.length === 0) {
       const message = t('unrecognizedMsg', type);
       statusEl.innerText = message;
       showResultPopup({
@@ -688,15 +768,32 @@ async function handleAttendance(type) {
       return setButtonsLocked(false);
     }
 
-    const [userId, name] = bestMatch.label.split('|');
-    const confidence = Math.round((1 - bestMatch.distance) * 100) + '%';
+    const best = human.match.find(
+      scan.embedding,
+      compatibleUsers.map(u => u.embedding)
+    );
 
-    statusEl.innerText = `Verified ${name} (${confidence})...`;
+    if (!best || best.similarity < MIN_SIMILARITY_SCORE) {
+      const message = t('unrecognizedMsg', type);
+      statusEl.innerText = message;
+      showResultPopup({
+        title: t('unrecognizedTitle'),
+        message,
+        eyebrow: t('attNotRecordedEyebrow', type),
+        kind: 'error'
+      });
+      return setButtonsLocked(false);
+    }
+
+    const matchedUser = compatibleUsers[best.index];
+    const confidence = `${Math.round(best.similarity * 100)}% (Real ${scan.realPct}%)`;
+
+    statusEl.innerText = `Verified ${matchedUser.name} (${Math.round(best.similarity * 100)}%)...`;
 
     const result = await postToGAS({
       action: 'attendance',
-      userId,
-      name,
+      userId: matchedUser.userId,
+      name: matchedUser.name,
       type,
       lat: currentCoords.latitude,
       lon: currentCoords.longitude,
@@ -710,14 +807,14 @@ async function handleAttendance(type) {
         title: t('attSuccessTitle', isIn),
         message: result.message || t('attSuccessDefault', isIn),
         eyebrow: t('attSuccessEyebrow', isIn),
-        meta: `${name} • ${userId}`
+        meta: `${matchedUser.name} • ${matchedUser.userId}`
       });
     } else {
       showResultPopup({
         title: t('attFailTitle', isIn),
         message: result.message || t('attFailTitle', isIn),
         eyebrow: t('attFailEyebrow'),
-        meta: `${name} • ${userId}`,
+        meta: `${matchedUser.name} • ${matchedUser.userId}`,
         kind: 'error'
       });
     }

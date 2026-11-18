@@ -715,6 +715,45 @@ async function activateSensors() {
   startGpsWatcher();
 }
 
+function getPositionWithFallback(highAccuracyTimeout = 6000) {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      (err) => {
+        if (err.code === 1) {
+          return reject(err);
+        }
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          reject,
+          { enableHighAccuracy: false, maximumAge: 30000, timeout: 8000 }
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: highAccuracyTimeout }
+    );
+  });
+}
+
+function handleGpsError(err) {
+  if (err.code === 1) {
+    gpsState = 'blocked';
+    gpsBadge.querySelector('.pill-text').textContent = t('gpsBlocked');
+    gpsBadge.className = 'pill warn';
+    statusEl.textContent = currentLang === 'id'
+      ? 'Izin Lokasi Ditolak: Aktifkan izin Lokasi di pengaturan browser.'
+      : 'Location Permission Denied: Enable Location in browser site settings.';
+  } else if (currentCoords) {
+    updateGpsStatus();
+  } else {
+    gpsState = 'waiting';
+    gpsBadge.querySelector('.pill-text').textContent = t('gpsWaiting');
+    gpsBadge.className = 'pill warn';
+    statusEl.textContent = currentLang === 'id'
+      ? 'Sinyal GPS lemah (di dalam ruangan). Ketuk tombol GPS untuk mencoba lagi.'
+      : 'Weak GPS signal indoors. Tap the GPS button to retry.';
+  }
+}
+
 function startGpsWatcher() {
   if (!('geolocation' in navigator)) {
     gpsState = 'unsupported';
@@ -729,6 +768,16 @@ function startGpsWatcher() {
     gpsWatchId = null;
   }
 
+  getPositionWithFallback(6000)
+    .then((pos) => {
+      if (isValidCoords(pos.coords)) {
+        currentCoords = pos.coords;
+        updateGpsStatus();
+        updateActionButtons();
+      }
+    })
+    .catch(handleGpsError);
+
   gpsWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       if (isValidCoords(pos.coords)) {
@@ -737,17 +786,12 @@ function startGpsWatcher() {
         updateActionButtons();
       }
     },
-    (err) => {
-      gpsState = 'blocked';
-      gpsBadge.querySelector('.pill-text').textContent = t('gpsBlocked');
-      gpsBadge.classList.add('warn');
-      statusEl.textContent = `GPS Error (${err.code}): ${err.message}`;
-    },
-    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+    handleGpsError,
+    { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 }
   );
 }
 
-function refreshGpsLocation() {
+async function refreshGpsLocation() {
   if (!('geolocation' in navigator)) {
     gpsState = 'unsupported';
     gpsBadge.querySelector('.pill-text').textContent = t('gpsUnsupported');
@@ -760,32 +804,30 @@ function refreshGpsLocation() {
   gpsBadge.querySelector('.pill-text').textContent = t('gpsWaiting');
   gpsBadge.className = 'pill pill-neutral';
 
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      if (isValidCoords(pos.coords)) {
-        currentCoords = pos.coords;
-        updateGpsStatus();
-        updateActionButtons();
-        if (map) {
-          map.setView([pos.coords.latitude, pos.coords.longitude], 17);
-        }
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+
+  try {
+    const pos = await getPositionWithFallback(5000);
+    if (isValidCoords(pos.coords)) {
+      currentCoords = pos.coords;
+      updateGpsStatus();
+      updateActionButtons();
+      if (map) {
+        map.setView([pos.coords.latitude, pos.coords.longitude], 17);
       }
-      if (gpsWatchId === null) {
-        startGpsWatcher();
-      }
-      btnRefreshGps.classList.remove('spinning');
-      btnRefreshGps.disabled = false;
-    },
-    (err) => {
-      gpsState = 'blocked';
-      gpsBadge.querySelector('.pill-text').textContent = t('gpsBlocked');
-      gpsBadge.className = 'pill warn';
-      statusEl.textContent = `GPS Error (${err.code}): ${err.message}`;
-      btnRefreshGps.classList.remove('spinning');
-      btnRefreshGps.disabled = false;
-    },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
-  );
+    }
+  } catch (err) {
+    handleGpsError(err);
+  } finally {
+    btnRefreshGps.classList.remove('spinning');
+    btnRefreshGps.disabled = false;
+    if (gpsState !== 'blocked') {
+      startGpsWatcher();
+    }
+  }
 }
 
 function isValidCoords(coords) {

@@ -3,17 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://unpkg.com; connect-src 'self' data: blob: https://script.google.com https://script.googleusercontent.com https://cdn.jsdelivr.net; media-src 'self' blob:; worker-src 'self' blob:;">
   <title>GeoAttend • HKN ke-62</title>
-  <!-- Google Font: Plus Jakarta Sans -->
   <link rel="icon" type="image/png" href="favicon.png">
+  <!-- Google Font: Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Leaflet Map -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- @vladmandic/human (WebGL/WASM Face Recognition + Anti-Spoofing) -->
-  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js"></script>
+  <!-- Leaflet Map (SRI pinned) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+  <!-- @vladmandic/human (Pinned WebGL/WASM Face Recognition + Anti-Spoofing) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/dist/human.js" crossorigin="anonymous"></script>
   <!-- App Assets -->
   <link rel="stylesheet" href="style.css">
   <script defer src="app.js"></script>
@@ -33,11 +35,11 @@
     <!-- Telemetry & Language Toggle Row (3 Columns) -->
     <section class="telemetry-row">
       <div id="aiBadge" class="pill pill-neutral">
-        <span class="pill-icon">🧠</span>
+        <span class="pill-icon" aria-hidden="true">🧠</span>
         <span class="pill-text">AI: Loading...</span>
       </div>
       <div id="gpsBadge" class="pill pill-neutral">
-        <span class="pill-icon">📍</span>
+        <span class="pill-icon" aria-hidden="true">📍</span>
         <span class="pill-text">GPS: Waiting...</span>
       </div>
       <button type="button" id="btnLangToggle" class="pill pill-toggle" aria-label="Toggle Language">
@@ -46,10 +48,21 @@
       </button>
     </section>
 
-    <!-- Interactive Geofence Map Card (2/3 shorter: 45px height) -->
-    <div class="map-card">
-      <div id="map"></div>
-      <div id="radiusTag" class="map-tag">Radius: -- m</div>
+    <!-- Interactive Geofence Map + Refresh GPS Button Row -->
+    <div class="map-row">
+      <div class="map-card">
+        <div id="map"></div>
+        <div id="radiusTag" class="map-tag">Radius: -- m</div>
+      </div>
+      <button type="button" id="btnRefreshGps" class="btn-refresh-gps" title="Refresh GPS" aria-label="Refresh GPS">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+          <path d="M16 16h5v5"/>
+        </svg>
+        <span data-i18n="btnRefreshGps">GPS</span>
+      </button>
     </div>
 
     <!-- Camera Viewport with Biometric Framing Guide -->
@@ -65,21 +78,21 @@
       <!-- Activation Overlay -->
       <div id="camOverlay" class="video-overlay">
         <div class="cam-icon-ring">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
         </div>
         <h3 data-i18n="overlayTitle">Camera & GPS Required</h3>
         <p data-i18n="overlayDesc">Enable sensors to verify your face and location at the venue.</p>
-        <button id="btnStartSensors" class="btn btn-primary btn-glow" data-i18n="btnActivate">
+        <button type="button" id="btnStartSensors" class="btn btn-primary btn-glow" data-i18n="btnActivate">
           Activate Camera & GPS
         </button>
       </div>
     </section>
 
-    <!-- Live Status Toast Bar -->
-    <div id="status" class="status-bar" role="status">
+    <!-- Hidden Status Bar (kept for screen readers & JS state) -->
+    <div id="status" class="status-bar" role="status" aria-live="polite">
       Initializing system...
     </div>
 
@@ -92,11 +105,11 @@
     <!-- Panel 1: Attendance Actions -->
     <section id="panel-attendance" class="tab-panel active">
       <div class="action-grid">
-        <button id="btnClockIn" class="btn btn-emerald" disabled>
+        <button type="button" id="btnClockIn" class="btn btn-emerald" disabled>
           <span class="btn-title" data-i18n="btnClockInTitle">Clock In</span>
           <span class="btn-sub" data-i18n="btnClockInSub">Arrival</span>
         </button>
-        <button id="btnClockOut" class="btn btn-rose" disabled>
+        <button type="button" id="btnClockOut" class="btn btn-rose" disabled>
           <span class="btn-title" data-i18n="btnClockOutTitle">Clock Out</span>
           <span class="btn-sub" data-i18n="btnClockOutSub">Departure</span>
         </button>
@@ -108,13 +121,13 @@
       <div class="form-stack">
         <div class="input-group">
           <label for="regId" data-i18n="labelId">NIP / Participant ID</label>
-          <input type="text" id="regId" data-i18n-placeholder="placeholderId" placeholder="e.g. 198109042009121001" autocomplete="off">
+          <input type="text" id="regId" maxlength="40" pattern="[A-Za-z0-9._-]+" data-i18n-placeholder="placeholderId" placeholder="e.g. 198109042009121001" autocomplete="off">
         </div>
         <div class="input-group">
           <label for="regName" data-i18n="labelName">Full Name</label>
-          <input type="text" id="regName" data-i18n-placeholder="placeholderName" placeholder="Enter your full name" autocomplete="off">
+          <input type="text" id="regName" maxlength="100" data-i18n-placeholder="placeholderName" placeholder="Enter your full name" autocomplete="off">
         </div>
-        <button id="btnRegister" class="btn btn-teal" disabled data-i18n="btnSaveProfile">
+        <button type="button" id="btnRegister" class="btn btn-teal" disabled data-i18n="btnSaveProfile">
           Capture & Save Face Profile
         </button>
       </div>

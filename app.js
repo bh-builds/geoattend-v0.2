@@ -1,7 +1,5 @@
-'use strict';
-
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbz1l_aMFoI6UyxQDz6i1mP2PuFLLXXbGOdgEoRGGhBOpCU3JcaiNm4oJkTvj9T6M2pjJg/exec';
-const HUMAN_MODELS_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/models/';
+const HUMAN_MODELS_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models/';
 
 const video = document.getElementById('video');
 const statusEl = document.getElementById('status');
@@ -9,9 +7,8 @@ const aiBadge = document.getElementById('aiBadge');
 const gpsBadge = document.getElementById('gpsBadge');
 const camOverlay = document.getElementById('camOverlay');
 const faceGuide = document.getElementById('faceGuide');
-const btnRefreshGps = document.getElementById('btnRefreshGps');
 
-let currentLang = localStorage.getItem('geoattend_lang') === 'id' ? 'id' : 'en';
+let currentLang = localStorage.getItem('geoattend_lang') || 'en';
 let appConfig = null;
 let human = null;
 let registeredUsers = []; // { userId, name, embedding }
@@ -21,18 +18,15 @@ let modelsReady = false;
 let modelsFailed = false;
 let cameraReady = false;
 let gpsState = 'waiting'; // waiting | ready | blocked | unsupported
-let gpsWatchId = null;
 let lastDistance = null;
 let lastInside = true;
 let map = null;
 let userMarker = null;
-let isBusy = false;
 
 // Calibrated anti-spoof & recognition thresholds for mobile/webcam feeds
 const MIN_ANTISPOOF_SCORE = 0.50;
 const MIN_LIVENESS_SCORE = 0.35;
 const MIN_SIMILARITY_SCORE = 0.55;
-const USER_ID_PATTERN = /^[A-Za-z0-9._-]{1,40}$/;
 
 const I18N = {
   en: {
@@ -49,7 +43,6 @@ const I18N = {
     gpsBlocked: 'GPS: Blocked',
     gpsUnsupported: 'GPS: N/A',
     gpsDist: (d, inside) => `${d}m (${inside ? 'In' : 'Out'})`,
-    btnRefreshGps: 'GPS',
     guideHint: 'Align your face inside the frame',
     overlayTitle: 'Camera & GPS Required',
     overlayDesc: 'Enable sensors to verify your face and location at the venue.',
@@ -75,7 +68,7 @@ const I18N = {
     statusReady: 'Ready! Align your face inside the oval frame.',
     statusConnFailed: 'Connection Failed',
     statusConnFailedSub: 'Could not reach Google Apps Script',
-    statusTimeout: 'Timeout: Server took too long to respond. Please try again.',
+    statusTimeout: 'Timeout: Google Apps Script took too long to respond.',
     statusHttps: 'Error: Camera & GPS require an HTTPS connection.',
     statusCamDenied: 'Camera Permission Denied: Tap the lock/tune icon in your address bar -> Permissions -> Allow Camera, then reload.',
     statusCamBusy: 'Camera is busy in another tab or app. Close it and tap Retry.',
@@ -84,7 +77,7 @@ const I18N = {
     statusScanningReg: 'Scanning face & liveness for registration... Hold still.',
     statusVerifying: 'Verifying live facial identity...',
     missingInfoTitle: 'Complete your details',
-    missingInfoMsg: 'Please enter a valid participant ID (letters, numbers, ., _, -) and full name.',
+    missingInfoMsg: 'Please enter both your participant ID and full name.',
     missingInfoEyebrow: 'MISSING INFORMATION',
     noFaceTitle: 'Face not detected',
     noFaceRegMsg: 'No face was detected. Move into the camera frame, look straight ahead, and ensure bright, even lighting.',
@@ -102,7 +95,7 @@ const I18N = {
     regFailedTitle: 'Registration not completed',
     regSaveFailedTitle: 'Face registration failed',
     gpsNotReadyTitle: 'GPS is not ready',
-    gpsNotReadyMsg: 'Wait until your location is detected, or tap the GPS refresh button beside the map.',
+    gpsNotReadyMsg: 'Wait until your location is detected, then try again.',
     gpsNotReadyEyebrow: 'LOCATION REQUIRED',
     noUsersTitle: 'No face profile found',
     noUsersMsg: 'Please register your face before checking in or out.',
@@ -134,7 +127,6 @@ const I18N = {
     gpsBlocked: 'GPS: Diblokir',
     gpsUnsupported: 'GPS: N/A',
     gpsDist: (d, inside) => `${d}m (${inside ? 'Dalam' : 'Luar'})`,
-    btnRefreshGps: 'GPS',
     guideHint: 'Posisikan wajah di dalam bingkai oval',
     overlayTitle: 'Kamera & GPS Diperlukan',
     overlayDesc: 'Aktifkan sensor untuk memverifikasi wajah dan lokasi Anda di tempat acara.',
@@ -160,7 +152,7 @@ const I18N = {
     statusReady: 'Siap! Posisikan wajah Anda di dalam bingkai oval.',
     statusConnFailed: 'Koneksi Gagal',
     statusConnFailedSub: 'Tidak dapat terhubung ke Google Apps Script',
-    statusTimeout: 'Waktu habis: Server terlalu lama merespons. Silakan coba lagi.',
+    statusTimeout: 'Waktu habis: Google Apps Script terlalu lama merespons.',
     statusHttps: 'Kesalahan: Kamera & GPS memerlukan koneksi HTTPS.',
     statusCamDenied: 'Izin Kamera Ditolak: Ketuk ikon gembok/pengaturan di bilah alamat browser -> Izin -> Izinkan Kamera, lalu muat ulang.',
     statusCamBusy: 'Kamera sedang digunakan aplikasi atau tab lain. Tutup lalu coba lagi.',
@@ -169,7 +161,7 @@ const I18N = {
     statusScanningReg: 'Memindai wajah & keaslian untuk pendaftaran... Harap hadap kamera.',
     statusVerifying: 'Memverifikasi identitas wajah langsung...',
     missingInfoTitle: 'Lengkapi data Anda',
-    missingInfoMsg: 'Harap masukkan ID peserta yang valid (huruf, angka, ., _, -) dan nama lengkap Anda.',
+    missingInfoMsg: 'Harap masukkan ID peserta dan nama lengkap Anda.',
     missingInfoEyebrow: 'DATA BELUM LENGKAP',
     noFaceTitle: 'Wajah tidak terdeteksi',
     noFaceRegMsg: 'Wajah tidak terdeteksi. Posisikan wajah menghadap kamera dengan pencahayaan yang terang dan merata.',
@@ -187,7 +179,7 @@ const I18N = {
     regFailedTitle: 'Pendaftaran belum berhasil',
     regSaveFailedTitle: 'Gagal menyimpan profil wajah',
     gpsNotReadyTitle: 'GPS belum siap',
-    gpsNotReadyMsg: 'Tunggu hingga lokasi Anda terdeteksi, atau ketuk tombol segarkan GPS di samping peta.',
+    gpsNotReadyMsg: 'Tunggu hingga lokasi Anda terdeteksi, lalu coba lagi.',
     gpsNotReadyEyebrow: 'LOKASI DIPERLUKAN',
     noUsersTitle: 'Profil wajah belum ada',
     noUsersMsg: 'Silakan daftarkan wajah Anda terlebih dahulu sebelum melakukan absensi.',
@@ -211,19 +203,6 @@ function t(key, ...args) {
   const dict = I18N[currentLang] || I18N.en;
   const val = dict[key];
   return typeof val === 'function' ? val(...args) : val;
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function sanitizeText(value, maxLen = 100) {
-  return String(value ?? '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, maxLen);
 }
 
 const FLAG_ASSETS = {
@@ -327,7 +306,6 @@ document.addEventListener('keydown', event => {
 // 1. Tab Switching Logic
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    if (isBusy) return;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
@@ -340,15 +318,6 @@ document.getElementById('btnStartSensors').addEventListener('click', activateSen
 document.getElementById('btnClockIn').addEventListener('click', () => handleAttendance('CLOCK IN'));
 document.getElementById('btnClockOut').addEventListener('click', () => handleAttendance('CLOCK OUT'));
 document.getElementById('btnRegister').addEventListener('click', handleRegister);
-btnRefreshGps.addEventListener('click', refreshGpsLocation);
-
-// Cleanup sensor watches on unload
-window.addEventListener('pagehide', () => {
-  if (gpsWatchId !== null && 'geolocation' in navigator) {
-    navigator.geolocation.clearWatch(gpsWatchId);
-    gpsWatchId = null;
-  }
-});
 
 // 3. Initialize Backend Config & @vladmandic/human AI Models
 window.addEventListener('load', () => {
@@ -357,68 +326,46 @@ window.addEventListener('load', () => {
   loadHumanModels();
 });
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 async function loadBackendConfig() {
-  statusEl.textContent = t('statusFetching');
+  statusEl.innerText = t('statusFetching');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
 
   try {
-    const response = await fetchWithTimeout(`${GAS_API_URL}?action=init`, {
+    const response = await fetch(`${GAS_API_URL}?action=init`, {
       method: 'GET',
       redirect: 'follow',
-      cache: 'no-store'
-    }, 15000);
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} (${response.statusText})`);
     }
 
     const initRes = await response.json();
-    if (!initRes || initRes.status !== 'ok' || !initRes.config) {
-      throw new Error(initRes?.message || 'Invalid response from Apps Script');
+    if (initRes.status !== 'ok') {
+      throw new Error(initRes.message || 'Invalid response from Apps Script');
     }
 
-    const lat = Number(initRes.config.latitude);
-    const lon = Number(initRes.config.longitude);
-    const radius = Number(initRes.config.allowedRadius);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(radius) || radius <= 0) {
-      throw new Error('Invalid venue coordinates or radius in configuration.');
-    }
-
-    appConfig = {
-      eventName: sanitizeText(initRes.config.eventName, 120) || 'Smart Attendance',
-      locationName: sanitizeText(initRes.config.locationName, 120) || 'Venue',
-      latitude: lat,
-      longitude: lon,
-      allowedRadius: radius,
-      restrict: Boolean(initRes.config.restrict)
-    };
-
-    document.getElementById('eventTitle').textContent = appConfig.eventName;
-    document.getElementById('locationSubtitle').textContent =
+    appConfig = initRes.config;
+    document.getElementById('eventTitle').innerText = appConfig.eventName;
+    document.getElementById('locationSubtitle').innerText =
       `${appConfig.locationName} • ${appConfig.restrict ? 'Strict Geofence' : 'Open Location'}`;
-    document.getElementById('radiusTag').textContent = t('radiusTag', appConfig.allowedRadius);
-    document.getElementById('versionInfo').textContent =
-      `GeoAttend • Human AI ${sanitizeText(initRes.version || 'v2', 24)}`;
+    document.getElementById('radiusTag').innerText = t('radiusTag', appConfig.allowedRadius);
+    document.getElementById('versionInfo').innerText = `GeoAttend • Human AI ${initRes.version || 'v2'}`;
 
     initMap(appConfig);
 
-    rawUsersCache = Array.isArray(initRes.users) ? initRes.users : [];
+    rawUsersCache = initRes.users || [];
     buildUserDescriptors();
 
-    statusEl.textContent = t('statusConfigLoaded');
+    statusEl.innerText = t('statusConfigLoaded');
   } catch (err) {
-    document.getElementById('eventTitle').textContent = t('statusConnFailed');
-    document.getElementById('locationSubtitle').textContent = t('statusConnFailedSub');
-    statusEl.textContent = err.name === 'AbortError'
+    clearTimeout(timeoutId);
+    document.getElementById('eventTitle').innerText = t('statusConnFailed');
+    document.getElementById('locationSubtitle').innerText = t('statusConnFailedSub');
+    statusEl.innerText = err.name === 'AbortError'
       ? t('statusTimeout')
       : `API Error: ${err.message}`;
   }
@@ -436,7 +383,7 @@ async function loadHumanModels() {
       modelBasePath: HUMAN_MODELS_BASE,
       async: true,
       warmup: 'face',
-      cacheSensitivity: 0,
+      cacheSensitivity: 0, // Run fresh detection on every scan
       filter: { enabled: true, equalization: true },
       face: {
         enabled: true,
@@ -458,40 +405,32 @@ async function loadHumanModels() {
     await human.warmup();
 
     modelsReady = true;
-    aiBadge.querySelector('.pill-text').textContent = t('aiReady');
+    aiBadge.querySelector('.pill-text').innerText = t('aiReady');
     aiBadge.classList.add('ok');
     buildUserDescriptors();
     updateActionButtons();
   } catch (err) {
     modelsFailed = true;
-    aiBadge.querySelector('.pill-text').textContent = t('aiFailed');
+    aiBadge.querySelector('.pill-text').innerText = t('aiFailed');
     aiBadge.classList.add('warn');
-    statusEl.textContent = `AI Model Error: ${err.message}`;
+    statusEl.innerText = `AI Model Error: ${err.message}`;
   }
 }
 
 function buildUserDescriptors() {
-  if (!rawUsersCache.length) {
-    registeredUsers = [];
-    return;
-  }
+  if (!rawUsersCache.length) return;
   registeredUsers = rawUsersCache
-    .filter(u =>
-      u &&
-      Array.isArray(u.descriptor) &&
-      u.descriptor.length > 0 &&
-      u.descriptor.every(v => Number.isFinite(Number(v)))
-    )
+    .filter(u => Array.isArray(u.descriptor) && u.descriptor.length > 0)
     .map(u => ({
-      userId: sanitizeText(u.userId, 40),
-      name: sanitizeText(u.name, 100),
+      userId: String(u.userId),
+      name: u.name,
       embedding: u.descriptor.map(Number)
     }));
 }
 
 // Multi-frame Human detection + anti-spoofing + temporal liveness check
 async function analyzeLiveFace() {
-  if (!human || !video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+  if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
     return { ok: false, reason: 'no_face' };
   }
 
@@ -526,14 +465,9 @@ async function analyzeLiveFace() {
     };
   }
 
-  const embedding = Array.from(bestFace.embedding).map(Number);
-  if (!embedding.length || !embedding.every(Number.isFinite)) {
-    return { ok: false, reason: 'no_face' };
-  }
-
   return {
     ok: true,
-    embedding,
+    embedding: Array.from(bestFace.embedding).map(Number),
     realPct: Math.round(maxReal * 100),
     livePct: Math.round(maxLive * 100)
   };
@@ -568,7 +502,7 @@ function findBestMatch(queryEmbedding, candidates) {
       normB += target[j] * target[j];
     }
     const denom = Math.sqrt(normA) * Math.sqrt(normB);
-    const sim = denom > 0 ? (dot / denom + 1) / 2 : 0;
+    const sim = denom > 0 ? (dot / denom + 1) / 2 : 0; // Normalized [0, 1] matching Human's scale
     if (sim > bestSimilarity) {
       bestSimilarity = sim;
       bestIndex = i;
@@ -583,12 +517,6 @@ function initMap(cfg) {
   if (typeof L === 'undefined') {
     mapElement.innerHTML = '<div class="map-load-message" role="status">Map library could not be loaded.</div>';
     return;
-  }
-
-  if (map) {
-    map.remove();
-    map = null;
-    userMarker = null;
   }
 
   map = L.map('map', { zoomControl: false, attributionControl: false }).setView([cfg.latitude, cfg.longitude], 16);
@@ -609,7 +537,7 @@ function initMap(cfg) {
 
   L.marker([cfg.latitude, cfg.longitude])
     .addTo(map)
-    .bindPopup(`<b>${escapeHtml(cfg.locationName)}</b><br>Radius: ${escapeHtml(cfg.allowedRadius)}m`);
+    .bindPopup(`<b>${cfg.locationName}</b><br>Radius: ${cfg.allowedRadius}m`);
 
   L.circle([cfg.latitude, cfg.longitude], {
     radius: cfg.allowedRadius,
@@ -618,23 +546,19 @@ function initMap(cfg) {
     fillOpacity: 0.18,
     weight: 2
   }).addTo(map);
-
-  setTimeout(() => {
-    if (map) map.invalidateSize();
-  }, 120);
 }
 
 // 4. Resilient Camera & GPS Activation
 async function activateSensors() {
   const btn = document.getElementById('btnStartSensors');
   btn.disabled = true;
-  btn.textContent = t('btnRequesting');
-  statusEl.textContent = t('statusReqSensors');
+  btn.innerText = t('btnRequesting');
+  statusEl.innerText = t('statusReqSensors');
 
   if (!window.isSecureContext) {
-    statusEl.textContent = t('statusHttps');
+    statusEl.innerText = t('statusHttps');
     btn.disabled = false;
-    btn.textContent = t('btnRetry');
+    btn.innerText = t('btnRetry');
     return;
   }
 
@@ -649,7 +573,7 @@ async function activateSensors() {
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false
       });
-    } catch (_) {
+    } catch (constraintErr) {
       stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: false
@@ -669,103 +593,41 @@ async function activateSensors() {
     updateActionButtons();
   } catch (err) {
     btn.disabled = false;
-    btn.textContent = t('btnRetry');
+    btn.innerText = t('btnRetry');
 
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      statusEl.textContent = t('statusCamDenied');
+      statusEl.innerText = t('statusCamDenied');
     } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-      statusEl.textContent = t('statusCamBusy');
+      statusEl.innerText = t('statusCamBusy');
     } else if (err.name === 'NotFoundError') {
-      statusEl.textContent = t('statusCamNotFound');
+      statusEl.innerText = t('statusCamNotFound');
     } else {
-      statusEl.textContent = `Camera Error (${err.name}): ${err.message}`;
+      statusEl.innerText = `Camera Error (${err.name}): ${err.message}`;
     }
     return;
   }
 
-  startGpsWatcher();
-}
-
-function startGpsWatcher() {
   if (!('geolocation' in navigator)) {
     gpsState = 'unsupported';
-    gpsBadge.querySelector('.pill-text').textContent = t('gpsUnsupported');
+    gpsBadge.querySelector('.pill-text').innerText = t('gpsUnsupported');
     gpsBadge.classList.add('warn');
-    statusEl.textContent = t('statusGpsUnsupported');
+    statusEl.innerText = t('statusGpsUnsupported');
     return;
   }
 
-  if (gpsWatchId !== null) {
-    navigator.geolocation.clearWatch(gpsWatchId);
-    gpsWatchId = null;
-  }
-
-  gpsWatchId = navigator.geolocation.watchPosition(
+  navigator.geolocation.watchPosition(
     (pos) => {
-      if (isValidCoords(pos.coords)) {
-        currentCoords = pos.coords;
-        updateGpsStatus();
-        updateActionButtons();
-      }
+      currentCoords = pos.coords;
+      updateGpsStatus();
+      updateActionButtons();
     },
     (err) => {
       gpsState = 'blocked';
-      gpsBadge.querySelector('.pill-text').textContent = t('gpsBlocked');
+      gpsBadge.querySelector('.pill-text').innerText = t('gpsBlocked');
       gpsBadge.classList.add('warn');
-      statusEl.textContent = `GPS Error (${err.code}): ${err.message}`;
+      statusEl.innerText = `GPS Error (${err.code}): ${err.message}`;
     },
     { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
-  );
-}
-
-function refreshGpsLocation() {
-  if (!('geolocation' in navigator)) {
-    gpsState = 'unsupported';
-    gpsBadge.querySelector('.pill-text').textContent = t('gpsUnsupported');
-    gpsBadge.classList.add('warn');
-    return;
-  }
-
-  btnRefreshGps.classList.add('spinning');
-  btnRefreshGps.disabled = true;
-  gpsBadge.querySelector('.pill-text').textContent = t('gpsWaiting');
-  gpsBadge.className = 'pill pill-neutral';
-
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      if (isValidCoords(pos.coords)) {
-        currentCoords = pos.coords;
-        updateGpsStatus();
-        updateActionButtons();
-        if (map) {
-          map.setView([pos.coords.latitude, pos.coords.longitude], 17);
-        }
-      }
-      if (gpsWatchId === null) {
-        startGpsWatcher();
-      }
-      btnRefreshGps.classList.remove('spinning');
-      btnRefreshGps.disabled = false;
-    },
-    (err) => {
-      gpsState = 'blocked';
-      gpsBadge.querySelector('.pill-text').textContent = t('gpsBlocked');
-      gpsBadge.className = 'pill warn';
-      statusEl.textContent = `GPS Error (${err.code}): ${err.message}`;
-      btnRefreshGps.classList.remove('spinning');
-      btnRefreshGps.disabled = false;
-    },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
-  );
-}
-
-function isValidCoords(coords) {
-  return Boolean(
-    coords &&
-    Number.isFinite(coords.latitude) &&
-    Number.isFinite(coords.longitude) &&
-    Math.abs(coords.latitude) <= 90 &&
-    Math.abs(coords.longitude) <= 180
   );
 }
 
@@ -782,9 +644,9 @@ function updateGpsStatus() {
   lastDistance = dist;
   lastInside = inside;
 
-  gpsBadge.querySelector('.pill-text').textContent = t('gpsDist', dist, inside);
+  gpsBadge.querySelector('.pill-text').innerText = t('gpsDist', dist, inside);
   gpsBadge.className = 'pill ' + (inside || !appConfig.restrict ? 'ok' : 'warn');
-  statusEl.textContent = t('statusReady');
+  statusEl.innerText = t('statusReady');
 
   if (map) {
     if (!userMarker) {
@@ -802,33 +664,27 @@ function updateGpsStatus() {
 }
 
 function updateActionButtons() {
-  const ready = !isBusy && modelsReady && cameraReady && currentCoords !== null;
+  const ready = modelsReady && cameraReady && currentCoords !== null;
   document.getElementById('btnClockIn').disabled = !ready;
   document.getElementById('btnClockOut').disabled = !ready;
-  document.getElementById('btnRegister').disabled = !(!isBusy && modelsReady && cameraReady);
+  document.getElementById('btnRegister').disabled = !(modelsReady && cameraReady);
 }
 
-// 5. CORS-Safe POST Helper with Timeout for Google Apps Script
+// 5. CORS-Safe POST Helper for Google Apps Script
 async function postToGAS(payload) {
-  const res = await fetchWithTimeout(GAS_API_URL, {
+  const res = await fetch(GAS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(payload)
-  }, 20000);
-
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} (${res.statusText})`);
-  }
+  });
   return res.json();
 }
 
 // 6. Register New Face Profile (with Liveness & Anti-Spoofing)
 async function handleRegister() {
-  if (isBusy) return;
-
-  const userId = sanitizeText(document.getElementById('regId').value, 40);
-  const name = sanitizeText(document.getElementById('regName').value, 100);
-  if (!userId || !name || !USER_ID_PATTERN.test(userId)) {
+  const userId = document.getElementById('regId').value.trim();
+  const name = document.getElementById('regName').value.trim();
+  if (!userId || !name) {
     return showResultPopup({
       title: t('missingInfoTitle'),
       message: t('missingInfoMsg'),
@@ -839,7 +695,7 @@ async function handleRegister() {
 
   const wasRegistered = rawUsersCache.some(u => String(u.userId) === userId);
   setButtonsLocked(true);
-  statusEl.textContent = t('statusScanningReg');
+  statusEl.innerText = t('statusScanningReg');
 
   try {
     const scan = await analyzeLiveFace();
@@ -847,7 +703,7 @@ async function handleRegister() {
     if (!scan.ok) {
       if (scan.reason === 'spoof') {
         const message = t('spoofMsg', scan.realPct, scan.livePct);
-        statusEl.textContent = message;
+        statusEl.innerText = message;
         showResultPopup({
           title: t('spoofTitle'),
           message,
@@ -856,7 +712,7 @@ async function handleRegister() {
         });
       } else {
         const message = t('noFaceRegMsg');
-        statusEl.textContent = message;
+        statusEl.innerText = message;
         showResultPopup({
           title: t('noFaceTitle'),
           message,
@@ -864,7 +720,7 @@ async function handleRegister() {
           kind: 'error'
         });
       }
-      return;
+      return setButtonsLocked(false);
     }
 
     const result = await postToGAS({
@@ -874,7 +730,7 @@ async function handleRegister() {
       descriptor: scan.embedding
     });
 
-    if (result && result.success) {
+    if (result.success) {
       registeredUsers = registeredUsers.filter(u => u.userId !== userId);
       registeredUsers.push({
         userId,
@@ -885,12 +741,10 @@ async function handleRegister() {
       rawUsersCache.push({ userId, name, descriptor: scan.embedding });
       document.getElementById('regId').value = '';
       document.getElementById('regName').value = '';
-
-      setButtonsLocked(false);
       document.querySelector('[data-tab="panel-attendance"]').click();
 
       const msg = wasRegistered ? t('regUpdatedMsg', name) : t('regCreatedMsg', name);
-      statusEl.textContent = msg;
+      statusEl.innerText = msg;
       showResultPopup({
         title: wasRegistered ? t('regUpdatedTitle') : t('regCreatedTitle'),
         message: msg,
@@ -898,21 +752,19 @@ async function handleRegister() {
         meta: `${t('regMeta', userId)} • Real ${scan.realPct}% • Live ${scan.livePct}%`
       });
     } else {
-      const errMsg = sanitizeText(result?.message, 240) || t('regFailedTitle');
-      statusEl.textContent = errMsg;
+      statusEl.innerText = result.message || t('regFailedTitle');
       showResultPopup({
         title: t('regFailedTitle'),
-        message: errMsg,
+        message: result.message || t('regFailedTitle'),
         eyebrow: t('noFaceRegEyebrow'),
         kind: 'error'
       });
     }
   } catch (err) {
-    const errMsg = err.name === 'AbortError' ? t('statusTimeout') : err.message;
-    statusEl.textContent = 'Registration Error: ' + errMsg;
+    statusEl.innerText = 'Registration Error: ' + err.message;
     showResultPopup({
       title: t('regSaveFailedTitle'),
-      message: errMsg,
+      message: err.message,
       eyebrow: t('subFailEyebrow'),
       kind: 'error'
     });
@@ -923,9 +775,6 @@ async function handleRegister() {
 
 // 7. Verify Live Face & Record Attendance
 async function handleAttendance(type) {
-  if (isBusy) return;
-  if (type !== 'CLOCK IN' && type !== 'CLOCK OUT') return;
-
   if (!currentCoords) {
     return showResultPopup({
       title: t('gpsNotReadyTitle'),
@@ -944,7 +793,7 @@ async function handleAttendance(type) {
   }
 
   setButtonsLocked(true);
-  statusEl.textContent = t('statusVerifying');
+  statusEl.innerText = t('statusVerifying');
 
   try {
     const scan = await analyzeLiveFace();
@@ -952,7 +801,7 @@ async function handleAttendance(type) {
     if (!scan.ok) {
       if (scan.reason === 'spoof') {
         const message = t('spoofMsg', scan.realPct, scan.livePct);
-        statusEl.textContent = message;
+        statusEl.innerText = message;
         showResultPopup({
           title: t('spoofTitle'),
           message,
@@ -961,7 +810,7 @@ async function handleAttendance(type) {
         });
       } else {
         const message = t('noFaceAttMsg', type);
-        statusEl.textContent = message;
+        statusEl.innerText = message;
         showResultPopup({
           title: t('noFaceTitle'),
           message,
@@ -969,7 +818,7 @@ async function handleAttendance(type) {
           kind: 'error'
         });
       }
-      return;
+      return setButtonsLocked(false);
     }
 
     // Filter stored embeddings matching current vector length (1024-D for Human FaceRes)
@@ -979,14 +828,14 @@ async function handleAttendance(type) {
 
     if (compatibleUsers.length === 0) {
       const message = t('legacyUsersMsg');
-      statusEl.textContent = message;
+      statusEl.innerText = message;
       showResultPopup({
         title: t('legacyUsersTitle'),
         message,
         eyebrow: t('attNotRecordedEyebrow', type),
         kind: 'error'
       });
-      return;
+      return setButtonsLocked(false);
     }
 
     const best = findBestMatch(scan.embedding, compatibleUsers);
@@ -994,20 +843,20 @@ async function handleAttendance(type) {
 
     if (!best || best.similarity < MIN_SIMILARITY_SCORE) {
       const message = t('unrecognizedMsg', type, bestPct);
-      statusEl.textContent = message;
+      statusEl.innerText = message;
       showResultPopup({
         title: t('unrecognizedTitle'),
         message,
         eyebrow: t('attNotRecordedEyebrow', type),
         kind: 'error'
       });
-      return;
+      return setButtonsLocked(false);
     }
 
     const matchedUser = compatibleUsers[best.index];
     const confidence = `${bestPct}% (Real ${scan.realPct}%, Live ${scan.livePct}%)`;
 
-    statusEl.textContent = `Verified ${matchedUser.name} (${bestPct}%)...`;
+    statusEl.innerText = `Verified ${matchedUser.name} (${bestPct}%)...`;
 
     const result = await postToGAS({
       action: 'attendance',
@@ -1019,21 +868,19 @@ async function handleAttendance(type) {
       confidence
     });
 
-    const serverMsg = sanitizeText(result?.message, 240);
-    statusEl.textContent = serverMsg || `${type} submitted.`;
+    statusEl.innerText = result.message || `${type} submitted.`;
     const isIn = type === 'CLOCK IN';
-
-    if (result && result.success) {
+    if (result.success) {
       showResultPopup({
         title: t('attSuccessTitle', isIn),
-        message: serverMsg || t('attSuccessDefault', isIn),
+        message: result.message || t('attSuccessDefault', isIn),
         eyebrow: t('attSuccessEyebrow', isIn),
         meta: `${matchedUser.name} • ${matchedUser.userId}`
       });
     } else {
       showResultPopup({
         title: t('attFailTitle', isIn),
-        message: serverMsg || t('attFailTitle', isIn),
+        message: result.message || t('attFailTitle', isIn),
         eyebrow: t('attFailEyebrow'),
         meta: `${matchedUser.name} • ${matchedUser.userId}`,
         kind: 'error'
@@ -1041,11 +888,10 @@ async function handleAttendance(type) {
     }
   } catch (err) {
     const isIn = type === 'CLOCK IN';
-    const errMsg = err.name === 'AbortError' ? t('statusTimeout') : err.message;
-    statusEl.textContent = 'Submission Error: ' + errMsg;
+    statusEl.innerText = 'Submission Error: ' + err.message;
     showResultPopup({
       title: t('attFailTitle', isIn),
-      message: errMsg,
+      message: err.message,
       eyebrow: t('subFailEyebrow'),
       kind: 'error'
     });
@@ -1055,8 +901,7 @@ async function handleAttendance(type) {
 }
 
 function setButtonsLocked(locked) {
-  isBusy = Boolean(locked);
-  if (isBusy) {
+  if (locked) {
     document.getElementById('btnClockIn').disabled = true;
     document.getElementById('btnClockOut').disabled = true;
     document.getElementById('btnRegister').disabled = true;

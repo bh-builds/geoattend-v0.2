@@ -23,10 +23,10 @@ let lastInside = true;
 let map = null;
 let userMarker = null;
 
-// Anti-spoof & recognition thresholds
+// Calibrated anti-spoof & recognition thresholds for mobile/webcam feeds
 const MIN_ANTISPOOF_SCORE = 0.50;
-const MIN_LIVENESS_SCORE = 0.50;
-const MIN_SIMILARITY_SCORE = 0.65;
+const MIN_LIVENESS_SCORE = 0.35;
+const MIN_SIMILARITY_SCORE = 0.55;
 
 const I18N = {
   en: {
@@ -83,7 +83,7 @@ const I18N = {
     noFaceRegMsg: 'No face was detected. Move into the camera frame, look straight ahead, and ensure bright, even lighting.',
     noFaceRegEyebrow: 'REGISTRATION NOT COMPLETED',
     spoofTitle: 'Liveness check failed',
-    spoofMsg: (realPct, livePct) => `Anti-spoofing check failed (Real: ${realPct}%, Live: ${livePct}%). Please use a live camera feed directly—not a photo or screen—under good lighting.`,
+    spoofMsg: (realPct, livePct) => `Anti-spoofing check failed (Real: ${realPct}%, Live: ${livePct}%). Blink naturally and use a live camera feed directly—not a photo or screen—under good lighting.`,
     spoofEyebrow: 'ANTI-SPOOFING ALERT',
     regUpdatedTitle: 'Face profile updated!',
     regCreatedTitle: 'Face registered!',
@@ -100,10 +100,12 @@ const I18N = {
     noUsersTitle: 'No face profile found',
     noUsersMsg: 'Please register your face before checking in or out.',
     noUsersEyebrow: 'REGISTRATION REQUIRED',
+    legacyUsersTitle: 'Face re-registration required',
+    legacyUsersMsg: 'Stored face profiles use an older AI model format. Please go to "Register Face" and re-register your face once.',
     noFaceAttMsg: (type) => `We could not detect your face, so your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} was not recorded. Center your face inside the oval and try again.`,
     attNotRecordedEyebrow: (type) => `${type} NOT RECORDED`,
     unrecognizedTitle: 'Face not recognized',
-    unrecognizedMsg: (type) => `Your face does not match a registered profile. Your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} was not recorded. Please register or update your face profile, then try again.`,
+    unrecognizedMsg: (type, scorePct) => `Your face did not match a registered profile${scorePct !== undefined ? ` (best match: ${scorePct}%)` : ''}. Your ${type === 'CLOCK IN' ? 'check-in' : 'check-out'} was not recorded. Please ensure good lighting or re-register your face.`,
     attSuccessTitle: (isIn) => isIn ? 'Check-in successful!' : 'Check-out successful!',
     attSuccessDefault: (isIn) => isIn ? 'Your arrival has been recorded successfully.' : 'Your departure has been recorded successfully.',
     attSuccessEyebrow: (isIn) => isIn ? 'ATTENDANCE RECORDED' : 'DEPARTURE RECORDED',
@@ -156,7 +158,7 @@ const I18N = {
     statusCamBusy: 'Kamera sedang digunakan aplikasi atau tab lain. Tutup lalu coba lagi.',
     statusCamNotFound: 'Perangkat kamera tidak ditemukan.',
     statusGpsUnsupported: 'Kamera aktif, tetapi GPS tidak didukung oleh browser ini.',
-    statusScanningReg: 'Memindai wajah & keaslian untuk pendaftaran... Harap diam sejenak.',
+    statusScanningReg: 'Memindai wajah & keaslian untuk pendaftaran... Harap hadap kamera.',
     statusVerifying: 'Memverifikasi identitas wajah langsung...',
     missingInfoTitle: 'Lengkapi data Anda',
     missingInfoMsg: 'Harap masukkan ID peserta dan nama lengkap Anda.',
@@ -165,7 +167,7 @@ const I18N = {
     noFaceRegMsg: 'Wajah tidak terdeteksi. Posisikan wajah menghadap kamera dengan pencahayaan yang terang dan merata.',
     noFaceRegEyebrow: 'PENDAFTARAN GAGAL',
     spoofTitle: 'Pemeriksaan keaslian wajah gagal',
-    spoofMsg: (realPct, livePct) => `Deteksi anti-spoofing gagal (Keaslian: ${realPct}%, Liveness: ${livePct}%). Harap gunakan wajah langsung di depan kamera (bukan foto atau layar HP) dengan cahaya terang.`,
+    spoofMsg: (realPct, livePct) => `Deteksi anti-spoofing gagal (Keaslian: ${realPct}%, Liveness: ${livePct}%). Berkedip secara alami dan gunakan wajah langsung di depan kamera (bukan foto atau layar HP) dengan cahaya terang.`,
     spoofEyebrow: 'PERINGATAN ANTI-SPOOFING',
     regUpdatedTitle: 'Profil wajah diperbarui!',
     regCreatedTitle: 'Wajah berhasil didaftarkan!',
@@ -182,10 +184,12 @@ const I18N = {
     noUsersTitle: 'Profil wajah belum ada',
     noUsersMsg: 'Silakan daftarkan wajah Anda terlebih dahulu sebelum melakukan absensi.',
     noUsersEyebrow: 'PENDAFTARAN DIPERLUKAN',
+    legacyUsersTitle: 'Pendaftaran ulang wajah diperlukan',
+    legacyUsersMsg: 'Data wajah yang tersimpan menggunakan format AI versi lama. Silakan buka tab "Daftar Wajah" dan daftarkan ulang wajah Anda.',
     noFaceAttMsg: (type) => `Wajah tidak terdeteksi sehingga ${type === 'CLOCK IN' ? 'absen masuk' : 'absen pulang'} tidak tercatat. Posisikan wajah di tengah bingkai oval dan coba lagi.`,
     attNotRecordedEyebrow: (type) => `${type === 'CLOCK IN' ? 'ABSEN MASUK' : 'ABSEN PULANG'} TIDAK TERCATAT`,
     unrecognizedTitle: 'Wajah tidak dikenali',
-    unrecognizedMsg: (type) => `Wajah Anda tidak cocok dengan profil terdaftar sehingga ${type === 'CLOCK IN' ? 'absen masuk' : 'absen pulang'} tidak tercatat. Silakan daftar wajah terlebih dahulu.`,
+    unrecognizedMsg: (type, scorePct) => `Wajah Anda tidak cocok dengan profil terdaftar${scorePct !== undefined ? ` (kemiripan tertinggi: ${scorePct}%)` : ''} sehingga ${type === 'CLOCK IN' ? 'absen masuk' : 'absen pulang'} tidak tercatat. Pastikan cahaya terang atau daftar ulang wajah Anda.`,
     attSuccessTitle: (isIn) => isIn ? 'Absen masuk berhasil!' : 'Absen pulang berhasil!',
     attSuccessDefault: (isIn) => isIn ? 'Kehadiran Anda telah berhasil dicatat.' : 'Kepulangan Anda telah berhasil dicatat.',
     attSuccessEyebrow: (isIn) => isIn ? 'KEHADIRAN TERCATAT' : 'KEPULANGAN TERCATAT',
@@ -359,8 +363,8 @@ async function loadBackendConfig() {
     statusEl.innerText = t('statusConfigLoaded');
   } catch (err) {
     clearTimeout(timeoutId);
-    document.getElementById('eventTitle').innerText = 'Connection Failed';
-    document.getElementById('locationSubtitle').innerText = 'Could not reach Google Apps Script';
+    document.getElementById('eventTitle').innerText = t('statusConnFailed');
+    document.getElementById('locationSubtitle').innerText = t('statusConnFailedSub');
     statusEl.innerText = err.name === 'AbortError'
       ? t('statusTimeout')
       : `API Error: ${err.message}`;
@@ -379,11 +383,11 @@ async function loadHumanModels() {
       modelBasePath: HUMAN_MODELS_BASE,
       async: true,
       warmup: 'face',
-      cacheSensitivity: 0, // Always run fresh detection when button is clicked
+      cacheSensitivity: 0, // Run fresh detection on every scan
       filter: { enabled: true, equalization: true },
       face: {
         enabled: true,
-        detector: { enabled: true, rotation: true, maxDetected: 1, minConfidence: 0.5 },
+        detector: { enabled: true, rotation: true, maxDetected: 1, minConfidence: 0.45 },
         mesh: { enabled: true },
         iris: { enabled: false },
         description: { enabled: true },
@@ -415,46 +419,97 @@ async function loadHumanModels() {
 
 function buildUserDescriptors() {
   if (!rawUsersCache.length) return;
-  // Filter compatible embeddings (Human FaceRes uses 1024-D vectors; ignore legacy 128-D vectors until re-registered)
   registeredUsers = rawUsersCache
     .filter(u => Array.isArray(u.descriptor) && u.descriptor.length > 0)
     .map(u => ({
       userId: String(u.userId),
       name: u.name,
-      embedding: u.descriptor
+      embedding: u.descriptor.map(Number)
     }));
 }
 
-// Run multi-frame Human detection + anti-spoofing + liveness check
+// Multi-frame Human detection + anti-spoofing + temporal liveness check
 async function analyzeLiveFace() {
-  // Sample 2 consecutive frames (~120ms apart) so temporal liveness & anti-spoofing stabilize
-  await human.detect(video);
-  await new Promise(resolve => setTimeout(resolve, 120));
-  const result = await human.detect(video);
-
-  const face = result?.face?.[0];
-  if (!face || !face.embedding || face.embedding.length === 0) {
+  if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
     return { ok: false, reason: 'no_face' };
   }
 
-  const realScore = typeof face.real === 'number' ? face.real : 1;
-  const liveScore = typeof face.live === 'number' ? face.live : 1;
+  let bestFace = null;
+  let maxLive = 0;
+  let maxReal = 0;
 
-  if (realScore < MIN_ANTISPOOF_SCORE || liveScore < MIN_LIVENESS_SCORE) {
+  // Sample 5 consecutive frames (~80ms apart) so temporal liveness & anti-spoofing stabilize
+  for (let i = 0; i < 5; i++) {
+    const result = await human.detect(video);
+    const face = result?.face?.[0];
+    if (face && face.embedding && face.embedding.length > 0) {
+      bestFace = face;
+      if (typeof face.live === 'number') maxLive = Math.max(maxLive, face.live);
+      if (typeof face.real === 'number') maxReal = Math.max(maxReal, face.real);
+    }
+    if (i < 4) {
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+  }
+
+  if (!bestFace) {
+    return { ok: false, reason: 'no_face' };
+  }
+
+  if (maxReal < MIN_ANTISPOOF_SCORE || maxLive < MIN_LIVENESS_SCORE) {
     return {
       ok: false,
       reason: 'spoof',
-      realPct: Math.round(realScore * 100),
-      livePct: Math.round(liveScore * 100)
+      realPct: Math.round(maxReal * 100),
+      livePct: Math.round(maxLive * 100)
     };
   }
 
   return {
     ok: true,
-    embedding: Array.from(face.embedding),
-    realPct: Math.round(realScore * 100),
-    livePct: Math.round(liveScore * 100)
+    embedding: Array.from(bestFace.embedding).map(Number),
+    realPct: Math.round(maxReal * 100),
+    livePct: Math.round(maxLive * 100)
   };
+}
+
+// Fallback cosine similarity if human.match.find signature differs across CDN builds
+function findBestMatch(queryEmbedding, candidates) {
+  if (human?.match?.find) {
+    try {
+      const res = human.match.find(queryEmbedding, candidates.map(c => c.embedding));
+      if (res && typeof res.index === 'number' && res.index >= 0 && typeof res.similarity === 'number') {
+        return { index: res.index, similarity: res.similarity };
+      }
+    } catch (_) {
+      // Fall through to direct cosine similarity calculation
+    }
+  }
+
+  let bestIndex = -1;
+  let bestSimilarity = -1;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const target = candidates[i].embedding;
+    if (!target || target.length !== queryEmbedding.length) continue;
+
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let j = 0; j < queryEmbedding.length; j++) {
+      dot += queryEmbedding[j] * target[j];
+      normA += queryEmbedding[j] * queryEmbedding[j];
+      normB += target[j] * target[j];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    const sim = denom > 0 ? (dot / denom + 1) / 2 : 0; // Normalized [0, 1] matching Human's scale
+    if (sim > bestSimilarity) {
+      bestSimilarity = sim;
+      bestIndex = i;
+    }
+  }
+
+  return bestIndex >= 0 ? { index: bestIndex, similarity: bestSimilarity } : null;
 }
 
 function initMap(cfg) {
@@ -515,7 +570,7 @@ async function activateSensors() {
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false
       });
     } catch (constraintErr) {
@@ -526,7 +581,12 @@ async function activateSensors() {
     }
 
     video.srcObject = stream;
+    await new Promise(resolve => {
+      if (video.readyState >= 1) return resolve();
+      video.onloadedmetadata = () => resolve();
+    });
     await video.play();
+
     cameraReady = true;
     camOverlay.classList.add('hidden');
     faceGuide.classList.remove('hidden');
@@ -689,7 +749,7 @@ async function handleRegister() {
         title: wasRegistered ? t('regUpdatedTitle') : t('regCreatedTitle'),
         message: msg,
         eyebrow: wasRegistered ? t('regUpdatedEyebrow') : t('regCreatedEyebrow'),
-        meta: `${t('regMeta', userId)} • Real ${scan.realPct}%`
+        meta: `${t('regMeta', userId)} • Real ${scan.realPct}% • Live ${scan.livePct}%`
       });
     } else {
       statusEl.innerText = result.message || t('regFailedTitle');
@@ -767,10 +827,10 @@ async function handleAttendance(type) {
     );
 
     if (compatibleUsers.length === 0) {
-      const message = t('unrecognizedMsg', type);
+      const message = t('legacyUsersMsg');
       statusEl.innerText = message;
       showResultPopup({
-        title: t('unrecognizedTitle'),
+        title: t('legacyUsersTitle'),
         message,
         eyebrow: t('attNotRecordedEyebrow', type),
         kind: 'error'
@@ -778,13 +838,11 @@ async function handleAttendance(type) {
       return setButtonsLocked(false);
     }
 
-    const best = human.match.find(
-      scan.embedding,
-      compatibleUsers.map(u => u.embedding)
-    );
+    const best = findBestMatch(scan.embedding, compatibleUsers);
+    const bestPct = best ? Math.round(best.similarity * 100) : 0;
 
     if (!best || best.similarity < MIN_SIMILARITY_SCORE) {
-      const message = t('unrecognizedMsg', type);
+      const message = t('unrecognizedMsg', type, bestPct);
       statusEl.innerText = message;
       showResultPopup({
         title: t('unrecognizedTitle'),
@@ -796,9 +854,9 @@ async function handleAttendance(type) {
     }
 
     const matchedUser = compatibleUsers[best.index];
-    const confidence = `${Math.round(best.similarity * 100)}% (Real ${scan.realPct}%)`;
+    const confidence = `${bestPct}% (Real ${scan.realPct}%, Live ${scan.livePct}%)`;
 
-    statusEl.innerText = `Verified ${matchedUser.name} (${Math.round(best.similarity * 100)}%)...`;
+    statusEl.innerText = `Verified ${matchedUser.name} (${bestPct}%)...`;
 
     const result = await postToGAS({
       action: 'attendance',

@@ -205,8 +205,8 @@ video {
 }
 
 .oval-frame {
-  width: 52%;
-  height: 72%;
+  width: 50%;
+  height: 80%;
   border: 2px solid rgba(45, 212, 191, 0.9);
   border-radius: 50%;
   box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.12);

@@ -910,6 +910,52 @@ function setButtonsLocked(locked) {
   }
 }
 
+// Add to I18N.en:
+btnRefreshGps: 'GPS',
+
+// Add to I18N.id:
+btnRefreshGps: 'GPS',
+
+// Bind GPS Refresh button (place alongside your other button listeners in app.js)
+document.getElementById('btnRefreshGps').addEventListener('click', refreshGpsLocation);
+
+function refreshGpsLocation() {
+  const btn = document.getElementById('btnRefreshGps');
+  if (!('geolocation' in navigator)) {
+    gpsState = 'unsupported';
+    gpsBadge.querySelector('.pill-text').innerText = t('gpsUnsupported');
+    gpsBadge.classList.add('warn');
+    return;
+  }
+
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  gpsBadge.querySelector('.pill-text').innerText = t('gpsWaiting');
+  gpsBadge.className = 'pill pill-neutral';
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      currentCoords = pos.coords;
+      updateGpsStatus();
+      updateActionButtons();
+      if (map) {
+        map.setView([pos.coords.latitude, pos.coords.longitude], 17);
+      }
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+    },
+    (err) => {
+      gpsState = 'blocked';
+      gpsBadge.querySelector('.pill-text').innerText = t('gpsBlocked');
+      gpsBadge.className = 'pill warn';
+      statusEl.innerText = `GPS Error (${err.code}): ${err.message}`;
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+  );
+}
+
 // 8. Haversine Formula (Distance in Meters)
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;

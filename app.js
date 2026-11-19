@@ -1,7 +1,7 @@
 'use strict';
 
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbz1l_aMFoI6UyxQDz6i1mP2PuFLLXXbGOdgEoRGGhBOpCU3JcaiNm4oJkTvj9T6M2pjJg/exec';
-const HUMAN_MODELS_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/models/';
+const HUMAN_MODELS_BASE = './models/';
 
 const video = document.getElementById('video');
 const statusEl = document.getElementById('status');

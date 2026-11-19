@@ -68,6 +68,10 @@ const I18N = {
     placeholderName: 'Enter your full name',
     btnSaveProfile: 'Capture & Save Face Profile',
     btnContinue: 'Continue',
+    procClockIn: 'Checking In',
+    procClockOut: 'Checking Out',
+    procRegister: 'Registering Face',
+    procDefault: 'Processing',
     statusInit: 'Initializing system...',
     statusFetching: 'Fetching event configuration from Google Sheets...',
     statusConfigLoaded: 'Config loaded. Tap "Activate Camera & GPS" above.',
@@ -153,6 +157,10 @@ const I18N = {
     placeholderName: 'Masukkan nama lengkap Anda',
     btnSaveProfile: 'Ambil & Simpan Profil Wajah',
     btnContinue: 'Lanjutkan',
+    procClockIn: 'Memproses Absen Masuk',
+    procClockOut: 'Memproses Absen Pulang',
+    procRegister: 'Mendaftarkan Wajah',
+    procDefault: 'Memproses',
     statusInit: 'Menginisialisasi sistem...',
     statusFetching: 'Mengambil konfigurasi acara dari Google Sheets...',
     statusConfigLoaded: 'Konfigurasi dimuat. Ketuk "Aktifkan Kamera & GPS" di atas.',
@@ -289,6 +297,65 @@ document.getElementById('btnLangToggle').addEventListener('click', () => {
   applyLanguage();
 });
 
+// Full-page blur overlay + spinning loader + live percentage progress
+async function runWithOverlay(buttonEl, label, asyncTask, minDurationMs = 500) {
+  const overlay = document.getElementById('globalLoadingOverlay');
+  const progressText = document.getElementById('globalProgressText');
+
+  if (!overlay || !progressText) {
+    if (typeof asyncTask === 'function') {
+      return await asyncTask();
+    }
+    return;
+  }
+
+  if (buttonEl) buttonEl.disabled = true;
+  overlay.classList.add('active');
+  overlay.setAttribute('aria-busy', 'true');
+
+  const startTime = performance.now();
+  let isTaskDone = false;
+
+  const taskPromise = (async () => {
+    try {
+      if (typeof asyncTask === 'function') {
+        await asyncTask();
+      }
+    } finally {
+      isTaskDone = true;
+    }
+  })();
+
+  const animationPromise = new Promise((resolve) => {
+    function tick(now) {
+      const elapsed = now - startTime;
+      const timeRatio = Math.min(1, elapsed / minDurationMs);
+      const rawPercent = isTaskDone
+        ? Math.round(timeRatio * 100)
+        : Math.min(95, Math.round(timeRatio * 95));
+
+      progressText.textContent = `${label}... ${rawPercent}%`;
+
+      if (elapsed < minDurationMs || !isTaskDone) {
+        requestAnimationFrame(tick);
+      } else {
+        progressText.textContent = `${label}... 100%`;
+        resolve();
+      }
+    }
+    requestAnimationFrame(tick);
+  });
+
+  try {
+    await Promise.all([taskPromise, animationPromise]);
+  } finally {
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-busy', 'false');
+    updateActionButtons();
+    progressText.textContent = `${t('procDefault')}... 0%`;
+  }
+}
+
 // Accessible, branded HTML result popup
 function showResultPopup({ title, message, eyebrow = 'SUCCESS', meta = '', kind = 'success' }) {
   const modal = document.getElementById('resultModal');
@@ -335,11 +402,24 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// 2. Bind Action Buttons
+// 2. Bind Action Buttons (with full-page blur + animated circle + progress)
 document.getElementById('btnStartSensors').addEventListener('click', activateSensors);
-document.getElementById('btnClockIn').addEventListener('click', () => handleAttendance('CLOCK IN'));
-document.getElementById('btnClockOut').addEventListener('click', () => handleAttendance('CLOCK OUT'));
-document.getElementById('btnRegister').addEventListener('click', handleRegister);
+
+const btnClockIn = document.getElementById('btnClockIn');
+btnClockIn.addEventListener('click', () => {
+  runWithOverlay(btnClockIn, t('procClockIn'), () => handleAttendance('CLOCK IN'), 500);
+});
+
+const btnClockOut = document.getElementById('btnClockOut');
+btnClockOut.addEventListener('click', () => {
+  runWithOverlay(btnClockOut, t('procClockOut'), () => handleAttendance('CLOCK OUT'), 500);
+});
+
+const btnRegister = document.getElementById('btnRegister');
+btnRegister.addEventListener('click', () => {
+  runWithOverlay(btnRegister, t('procRegister'), () => handleRegister(), 500);
+});
+
 btnRefreshGps.addEventListener('click', refreshGpsLocation);
 
 // Cleanup sensor watches on unload

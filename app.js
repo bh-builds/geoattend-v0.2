@@ -28,12 +28,10 @@ let map = null;
 let userMarker = null;
 let isBusy = false;
 
-// Balanced thresholds: prevents phantom no-face matches while keeping scans fast
-const MIN_FACE_CONFIDENCE = 0.65;
-const MIN_FACE_BOX_PX = 80;
-const MIN_ANTISPOOF_SCORE = 0.35;
-const MIN_LIVENESS_SCORE = 0.25;
-const MIN_SIMILARITY_SCORE = 0.68;
+// Calibrated anti-spoof & recognition thresholds for mobile/webcam feeds
+const MIN_ANTISPOOF_SCORE = 0.50;
+const MIN_LIVENESS_SCORE = 0.35;
+const MIN_SIMILARITY_SCORE = 0.55;
 const USER_ID_PATTERN = /^[A-Za-z0-9._-]{1,40}$/;
 
 const I18N = {
@@ -436,12 +434,12 @@ async function loadHumanModels() {
     const baseConfig = {
       modelBasePath: HUMAN_MODELS_BASE,
       async: true,
-      warmup: 'face',
+      warmup: 'none',
       cacheSensitivity: 0,
       filter: { enabled: true, equalization: true },
       face: {
         enabled: true,
-        detector: { enabled: true, rotation: true, maxDetected: 1, minConfidence: MIN_FACE_CONFIDENCE },
+        detector: { enabled: true, rotation: true, maxDetected: 1, minConfidence: 0.45 },
         mesh: { enabled: true },
         iris: { enabled: false },
         description: { enabled: true },
@@ -498,9 +496,9 @@ function buildUserDescriptors() {
     }));
 }
 
-// Strict face presence check + fast early-exit liveness scan
+// Multi-frame Human detection + anti-spoofing + temporal liveness check
 async function analyzeLiveFace() {
-  if (!human || !video || video.readyState < 2 || video.paused || video.ended || video.videoWidth === 0 || video.videoHeight === 0) {
+  if (!human || !video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
     return { ok: false, reason: 'no_face' };
   }
 
@@ -508,36 +506,17 @@ async function analyzeLiveFace() {
   let maxLive = 0;
   let maxReal = 0;
 
-  // Sample up to 3 frames (~40ms apart) and exit immediately once valid face + liveness pass
-  for (let i = 0; i < 3; i++) {
+  // Sample 5 consecutive frames (~80ms apart) so temporal liveness & anti-spoofing stabilize
+  for (let i = 0; i < 5; i++) {
     const result = await human.detect(video);
     const face = result?.face?.[0];
-
-    const boxWidth = Array.isArray(face?.box) ? face.box[2] : 0;
-    const boxHeight = Array.isArray(face?.box) ? face.box[3] : 0;
-    const faceScore = typeof face?.score === 'number' ? face.score : (face?.boxScore ?? 0);
-
-    const isValidFace = Boolean(
-      face &&
-      faceScore >= MIN_FACE_CONFIDENCE &&
-      boxWidth >= MIN_FACE_BOX_PX &&
-      boxHeight >= MIN_FACE_BOX_PX &&
-      face.embedding &&
-      face.embedding.length > 0
-    );
-
-    if (isValidFace) {
+    if (face && face.embedding && face.embedding.length > 0) {
       bestFace = face;
       if (typeof face.live === 'number') maxLive = Math.max(maxLive, face.live);
       if (typeof face.real === 'number') maxReal = Math.max(maxReal, face.real);
-
-      if (maxReal >= MIN_ANTISPOOF_SCORE && maxLive >= MIN_LIVENESS_SCORE) {
-        break;
-      }
     }
-
-    if (i < 2) {
-      await new Promise(resolve => setTimeout(resolve, 40));
+    if (i < 4) {
+      await new Promise(resolve => setTimeout(resolve, 80));
     }
   }
 
@@ -567,7 +546,7 @@ async function analyzeLiveFace() {
   };
 }
 
-// Cosine similarity matching (0.50 = unrelated, >=0.68 = same person)
+// Fallback cosine similarity if human.match.find signature differs across CDN builds
 function findBestMatch(queryEmbedding, candidates) {
   if (human?.match?.find) {
     try {
